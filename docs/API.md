@@ -520,6 +520,7 @@ Get current server settings.
 | `storageMode` | `cache` (HF cache layout) or `local` (server started with `--local-dir`); read-only |
 | `localDir` | The `--local-dir` directory; omitted unless `storageMode` is `local` |
 | `exportDir` | Where `POST /api/cache/export` writes; omitted when export is disabled |
+| `mirrorDir` | The only directory the web UI may add mirror targets under; omitted when targets can only be managed on the server |
 | `linkMode` | `auto`, `symlink`, `hardlink` or `copy`; omitted when not configured (= `auto`) |
 | `endpoint` | Custom Hub endpoint; omitted when using the default |
 | `proxy` | Proxy settings (never includes the password); omitted when no proxy URL is set. Inner fields are omitted when empty/false |
@@ -963,13 +964,24 @@ curl -X POST http://localhost:8080/api/jobs/a1b2c3d4e5f6/dismiss
 
 Manage named mirror targets and copy repos between cache directories.
 
+Mirror operations only accept **registered target names**, never paths: a
+target is a directory the server copies into, reads from and (with
+`deleteExtra`) deletes under, so accepting raw paths gave any API client
+arbitrary filesystem access. Targets are registered on the server with
+`hfdownloader mirror target add <name> <path>`. Adding or removing targets
+from the web is disabled unless the server was started with
+`--mirror-dir PATH` (or `mirror-dir` in the config file); web-managed targets
+must then lie inside that directory.
+
 #### GET /api/mirror/targets
 
 List configured mirror targets.
 
 #### POST /api/mirror/targets
 
-Add a target.
+Add a target. Requires `--mirror-dir`; `path` must be inside it (400
+otherwise). A target registered on the server outside `--mirror-dir` can't be
+repointed from the web (403).
 
 ```json
 { "name": "office", "path": "/mnt/nas/hf-cache", "description": "optional" }
@@ -977,11 +989,14 @@ Add a target.
 
 #### DELETE /api/mirror/targets/{name}
 
-Remove a target by name.
+Remove a target by name. Only targets inside `--mirror-dir` can be removed
+from the web; others return 403 (remove them with
+`hfdownloader mirror target remove`).
 
 #### POST /api/mirror/diff
 
-Show which repos differ between the local cache and a target.
+Show which repos differ between the local cache and a target. `target` is a
+registered target name; an unknown name (or a path) returns 400.
 
 ```json
 { "target": "office", "repoFilter": "" }
@@ -1310,6 +1325,10 @@ Sent for allowed requests that carry an `Origin` header:
 | Header | Value |
 |--------|-------|
 | `Access-Control-Allow-Origin` | The request's origin (same origin or allowed via `--allow-origin`) |
+| `Content-Security-Policy` | Restricts what the web UI may load (no plugins, framing or third-party hosts); set on every response |
+| `X-Content-Type-Options` | `nosniff` |
+| `X-Frame-Options` | `DENY` |
+| `Referrer-Policy` | `no-referrer` |
 | `Access-Control-Allow-Methods` | GET, POST, PUT, DELETE, OPTIONS |
 | `Access-Control-Allow-Headers` | Content-Type, Authorization |
 | `Access-Control-Max-Age` | 86400 |

@@ -217,7 +217,7 @@ func (r *RepoDir) manifestEntries(commit string) ([]exportEntry, []string, error
 	var out []exportEntry
 	var missing []string
 	for _, f := range m.Files {
-		if unsafeRepoPath(f.Name) || !strings.HasPrefix(f.Blob, "blobs/") {
+		if unsafeRepoPath(f.Name) || !strings.HasPrefix(f.Blob, "blobs/") || !validSHA256Hex(strings.TrimPrefix(f.Blob, "blobs/")) {
 			continue
 		}
 		src := filepath.Join(r.Path(), filepath.FromSlash(f.Blob))
@@ -245,12 +245,18 @@ func (r *RepoDir) RepairSnapshot() (int, error) {
 	if m.Commit == "" {
 		return 0, nil
 	}
+	if !validSnapshotName(m.Commit) {
+		return 0, fmt.Errorf("manifest commit %q is not a valid snapshot name", m.Commit)
+	}
 	created := 0
 	for _, f := range m.Files {
 		if unsafeRepoPath(f.Name) || !strings.HasPrefix(f.Blob, "blobs/") {
 			continue
 		}
 		sha := strings.TrimPrefix(f.Blob, "blobs/")
+		if !validSHA256Hex(sha) {
+			continue
+		}
 		if _, err := os.Stat(r.BlobPath(sha)); err != nil {
 			continue
 		}

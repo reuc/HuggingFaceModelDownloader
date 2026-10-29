@@ -273,6 +273,7 @@ hfdownloader serve [flags]
 | `--auth-pass` | | string | | Basic auth password (must be used with `--auth-user`) |
 | `--allow-origin` | | strings | | Extra browser origin allowed to call the API (repeatable; `*` allows any). Other origins get 403 |
 | `--export-dir` | | string | | Enable "Export as real files" in the web UI, writing to `<export-dir>/<owner>/<name>` |
+| `--mirror-dir` | | string | | Allow the web UI to add/remove mirror targets, but only inside this directory. Without it, targets can only be registered on the server with `mirror target add`; the API never accepts raw paths |
 | `--link-mode` | | string | config `link-mode`, else `auto` | Link mode for downloads: `auto`, `symlink`, `hardlink`, `copy` (see `download`) |
 | `--models-dir` | | string | `./Models` | Legacy models directory |
 | `--datasets-dir` | | string | `./Datasets` | Legacy datasets directory |
@@ -998,7 +999,7 @@ Configuration is loaded from the first of:
 
 Command-line flags always win over the file. Besides the keys below, the file
 may hold `cache-dir`, `stall-timeout`, `link-mode` and (for `serve`)
-`export-dir`. Saving settings in the web UI rewrites only the keys it manages
+`export-dir` and `mirror-dir`. Saving settings in the web UI rewrites only the keys it manages
 (`token`, `connections`, `max-active`, `multipart-threshold`, `verify`,
 `retries`, `endpoint`, `proxy`) and keeps everything else.
 

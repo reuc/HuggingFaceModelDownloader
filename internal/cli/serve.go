@@ -36,6 +36,7 @@ func newServeCmd(ro *RootOpts) *cobra.Command {
 		allowOrigins       []string
 		linkMode           string
 		exportDir          string
+		mirrorDir          string
 	)
 
 	cmd := &cobra.Command{
@@ -74,6 +75,7 @@ web app on a different origin needs to call the API.`,
 				AllowedOrigins: allowOrigins,
 				LinkMode:       linkMode,
 				ExportDir:      exportDir,
+				MirrorDir:      mirrorDir,
 				Version:        cmd.Root().Version, // injected build version (ldflags)
 			}
 
@@ -167,6 +169,7 @@ web app on a different origin needs to call the API.`,
 	// Storage
 	cmd.Flags().StringVar(&linkMode, "link-mode", "", "How cache entries refer to downloaded data: auto (symlink, else hardlink, else copy), symlink, hardlink, copy")
 	cmd.Flags().StringVar(&exportDir, "export-dir", "", "Enable \"Export as real files\" in the web UI, writing to <export-dir>/<owner>/<name>")
+	cmd.Flags().StringVar(&mirrorDir, "mirror-dir", "", "Allow the web UI to add mirror targets, but only inside this directory (targets added with `mirror target add` work regardless)")
 
 	// Cross-origin access
 	cmd.Flags().StringSliceVar(&allowOrigins, "allow-origin", nil, "Extra browser origin allowed to call the API, e.g. https://hfd.example.com (repeatable; \"*\" allows any)")

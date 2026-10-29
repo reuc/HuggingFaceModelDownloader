@@ -234,6 +234,9 @@ func (s BlobStatus) String() string {
 // CheckBlob checks the status of a blob in the cache.
 // Returns the status and any existing incomplete metadata.
 func (r *RepoDir) CheckBlob(sha256 string) (BlobStatus, *IncompleteMeta, error) {
+	if !validSHA256Hex(sha256) {
+		return BlobMissing, nil, fmt.Errorf("invalid blob hash %q", sha256)
+	}
 	blobPath := r.BlobPath(sha256)
 	incompletePath := r.IncompletePath(sha256)
 	metaPath := r.IncompleteMetaPath(sha256)
@@ -395,6 +398,18 @@ func (r *RepoDir) CreateSnapshot(commit string, files []SnapshotFile) error {
 // entirely, leaving files only as blobs/{sha256} that neither Python nor
 // users could find.
 func (r *RepoDir) createSnapshotSymlink(commit, relativePath, sha256 string) error {
+	// Defense in depth: the plan validates these, but every path component
+	// here is remote-controlled and placeLink replaces whatever is at the
+	// link path, so never build one from an unchecked value.
+	if !validSnapshotName(commit) {
+		return fmt.Errorf("invalid snapshot commit %q", commit)
+	}
+	if !validSHA256Hex(sha256) {
+		return fmt.Errorf("invalid blob hash %q", sha256)
+	}
+	if unsafeRepoPath(relativePath) {
+		return fmt.Errorf("unsafe repo path %q", relativePath)
+	}
 	linkPath := filepath.Join(r.SnapshotDir(commit), filepath.FromSlash(relativePath))
 	blobPath := r.BlobPath(sha256)
 	target, err := filepath.Rel(filepath.Dir(linkPath), blobPath)
@@ -441,6 +456,13 @@ func (r *RepoDir) ListSnapshots() ([]string, error) {
 func (r *RepoDir) CreateFriendlySymlink(commit, relativePath, filterSubdir string) error {
 	if r.cache.LinkMode == LinkCopy || r.cache.copyOnly() {
 		return nil
+	}
+
+	if !validSnapshotName(commit) {
+		return fmt.Errorf("invalid snapshot commit %q", commit)
+	}
+	if unsafeRepoPath(relativePath) || (filterSubdir != "" && unsafeRepoPath(filterSubdir)) {
+		return fmt.Errorf("unsafe friendly path %q / %q", filterSubdir, relativePath)
 	}
 
 	friendlyBase := r.FriendlyPath()
@@ -510,6 +532,9 @@ func (r *RepoDir) StoreDownloadedFile(tempFile, relativePath, commit, sha256, fi
 			return nil, fmt.Errorf("compute sha256: %w", err)
 		}
 		sha256 = computed
+	}
+	if !validSHA256Hex(sha256) {
+		return nil, fmt.Errorf("invalid blob hash %q", sha256)
 	}
 
 	blobPath := r.BlobPath(sha256)

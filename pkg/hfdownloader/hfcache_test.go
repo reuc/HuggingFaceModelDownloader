@@ -263,7 +263,7 @@ func TestRepoDir_CheckBlob(t *testing.T) {
 	repo, _ := cache.Repo("owner/name", RepoTypeModel)
 	repo.EnsureDirs()
 
-	sha := "abc123"
+	sha := strings.Repeat("ab", 32) // blob names must be hex SHA256
 
 	t.Run("missing blob", func(t *testing.T) {
 		status, meta, err := repo.CheckBlob(sha)
@@ -299,7 +299,7 @@ func TestRepoDir_CheckBlob(t *testing.T) {
 	})
 
 	t.Run("stale incomplete", func(t *testing.T) {
-		sha2 := "def456"
+		sha2 := strings.Repeat("cd", 32)
 		// Create incomplete file (no metadata = stale)
 		incompletePath := repo.IncompletePath(sha2)
 		if err := os.WriteFile(incompletePath, []byte("partial"), 0644); err != nil {
