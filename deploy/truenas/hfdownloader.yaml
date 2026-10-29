@@ -14,6 +14,8 @@
 #   The app runs as uid/gid 1000. Give that id write access to the cache
 #   dataset, e.g. Datasets > hfdownloader/cache > Permissions, owner 1000:1000,
 #   or from a shell:  chown -R 1000:1000 /mnt/tank/apps/hfdownloader/cache
+#   To run as a different uid/gid instead (e.g. 568 "apps", or an SMB share
+#   user), uncomment "user:" and "HOME:" below. SSH is unavailable that way.
 #
 # Ports:
 #   Web UI:  http://<truenas-ip>:8080
@@ -24,11 +26,15 @@
 
 services:
   hfdownloader:
-    image: ghcr.io/bodaay/huggingfacemodeldownloader:latest
+    image: docker.io/reuc/hfdownloader:latest
     command: ["serve"]
     restart: unless-stopped
+    # Optional: run as this uid:gid instead of 1000:1000. Requires the HOME
+    # line below (so settings save to the cache dataset) and SSH_ENABLE "false".
+    # user: "568:568"
 
     environment:
+      # HOME: "/home/hfdownloader/.cache/huggingface"   # uncomment with "user:" above
       TZ: "Etc/UTC"                  # <-- CHANGE to your timezone, e.g. America/Chicago
       HTTP_PORT: "8080"
       AUTH_USER: "admin"             # <-- CHANGE
