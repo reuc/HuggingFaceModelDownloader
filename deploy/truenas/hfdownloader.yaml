@@ -1,0 +1,55 @@
+# =============================================================================
+# HuggingFace Model Downloader - TrueNAS SCALE custom app
+# =============================================================================
+# Install (TrueNAS SCALE 24.10 "Electric Eel" or newer):
+#   Apps > Discover Apps > ⋮ (top right) > Install via YAML
+#   Name it "hfdownloader" and paste this whole file.
+#
+# Before installing, edit the values marked  # <-- CHANGE  below:
+#   1. The two host paths under "volumes" must point at datasets on your pool.
+#   2. AUTH_USER / AUTH_PASS: the login for the web UI (and for SSH).
+#   3. HF_TOKEN: only needed for private or gated models. Remove it otherwise.
+#
+# Dataset permissions:
+#   The app runs as uid/gid 1000. Give that id write access to the cache
+#   dataset, e.g. Datasets > hfdownloader/cache > Permissions, owner 1000:1000,
+#   or from a shell:  chown -R 1000:1000 /mnt/tank/apps/hfdownloader/cache
+#
+# Ports:
+#   Web UI:  http://<truenas-ip>:8080
+#   SSH:     ssh -p 2222 <AUTH_USER>@<truenas-ip>   (only when SSH_ENABLE=true)
+#   SSH uses 2222 because TrueNAS's own SSH service already owns port 22.
+#   If you change HTTP_PORT or SSH_PORT, change the matching "ports" line too.
+# =============================================================================
+
+services:
+  hfdownloader:
+    image: ghcr.io/bodaay/huggingfacemodeldownloader:latest
+    command: ["serve"]
+    restart: unless-stopped
+
+    environment:
+      TZ: "Etc/UTC"                  # <-- CHANGE to your timezone, e.g. America/Chicago
+      HTTP_PORT: "8080"
+      AUTH_USER: "admin"             # <-- CHANGE
+      AUTH_PASS: "change-me"         # <-- CHANGE
+      SSH_ENABLE: "false"            # set "true" to allow scp/sftp/ssh access
+      SSH_PORT: "2222"
+      HF_TOKEN: ""                   # <-- CHANGE (optional) hf_xxx for gated models
+
+    ports:
+      - "8080:8080"                  # HTTP_PORT
+      - "2222:2222"                  # SSH_PORT (harmless while SSH is disabled)
+
+    volumes:
+      # Downloaded models and datasets (HuggingFace cache layout)
+      - /mnt/tank/apps/hfdownloader/cache:/home/hfdownloader/.cache/huggingface   # <-- CHANGE
+      # SSH host keys, kept so clients don't see a new key after an app update
+      - /mnt/tank/apps/hfdownloader/ssh-keys:/etc/ssh/keys                        # <-- CHANGE
+
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 $${HTTP_PORT:-8080} || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s

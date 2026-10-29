@@ -37,6 +37,33 @@ func ValidRevision(rev string) bool {
 	return true
 }
 
+// validSHA256Hex reports whether s is a 64-character hex SHA256, the only
+// form a blob name may take. Hashes come from the repo tree, which is
+// remote-controlled (see unsafeRepoPath), and become blobs/<sha> and
+// blobs/tmp-<sha> paths, so anything else (e.g. "/../../x") would escape
+// the cache.
+func validSHA256Hex(s string) bool {
+	if len(s) != 64 {
+		return false
+	}
+	for _, r := range s {
+		switch {
+		case r >= '0' && r <= '9', r >= 'a' && r <= 'f', r >= 'A' && r <= 'F':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// validSnapshotName reports whether commit may name a snapshot directory
+// (snapshots/<commit>): a valid revision with no path separator. The value
+// comes from the Hub's revision API (or falls back to the revision name
+// when a mirror has no such API), so it is remote-controlled too.
+func validSnapshotName(commit string) bool {
+	return ValidRevision(commit) && !strings.Contains(commit, "/")
+}
+
 // validRepoIDPart reports whether s is a valid owner or name in a repo ID.
 func validRepoIDPart(s string) bool {
 	if s == "" || s == "." || s == ".." {

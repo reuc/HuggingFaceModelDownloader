@@ -87,6 +87,11 @@ func scanRepo(ctx context.Context, httpc *http.Client, token string, job Job, cf
 	if commitSHA == "" {
 		commitSHA = job.Revision // fallback
 	}
+	// The commit names the snapshot directory (and is written to refs/);
+	// a tampered revision response must not become a path outside the cache.
+	if !validSnapshotName(commitSHA) {
+		return nil, fmt.Errorf("refusing unsafe commit from repo info: %q", commitSHA)
+	}
 
 	// List and fetch files at the resolved commit rather than the branch name,
 	// so a repo updated mid-download (or between a pause and a resume) can't
@@ -155,6 +160,12 @@ func scanRepo(ctx context.Context, httpc *http.Client, token string, job Job, cf
 			if sha == "" {
 				sha = n.LFS.Oid
 			}
+		}
+		// The hash names the blob (blobs/<sha>, blobs/tmp-<sha>): reject
+		// anything that isn't a hex SHA256 before it can reach the
+		// filesystem, failing the whole plan like a bad path does.
+		if sha != "" && !validSHA256Hex(sha) {
+			return fmt.Errorf("refusing unsafe sha256 from repo tree for %q: %q", rel, sha)
 		}
 
 		items = append(items, PlanItem{

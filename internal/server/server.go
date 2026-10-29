@@ -45,6 +45,13 @@ type Config struct {
 	// written to <ExportDir>/<owner>/<name>. Empty disables exporting from
 	// the web, so the API can't be used to write files anywhere else.
 	ExportDir string
+	// MirrorDir, when set, is the only directory under which the web UI/API
+	// may add (or remove) mirror targets. Empty disables managing targets from
+	// the web; targets registered on the server with `mirror target add` can
+	// still be used. Mirror operations only ever accept registered target
+	// names, never raw paths, so the API can't copy to, read from or delete
+	// under arbitrary directories.
+	MirrorDir string
 	Endpoint  string // Custom HuggingFace endpoint (e.g., for mirrors)
 
 	// Authentication
@@ -129,6 +136,49 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	// Start WebSocket hub
 	go s.wsHub.Run()
 
+	handler := s.handler()
+	addr := fmt.Sprintf("%s:%d", s.config.Addr, s.config.Port)
+
+	s.httpServer = &http.Server{
+		Addr:        addr,
+		Handler:     handler,
+		ReadTimeout: 30 * time.Second,
+		// Above hubRequestTimeout: analyzing big repos (allenai/c4 lists
+		// 69k files) can take well over 30s. WebSockets are hijacked and
+		// unaffected.
+		WriteTimeout: hubRequestTimeout + 30*time.Second,
+		IdleTimeout:  120 * time.Second,
+	}
+
+	// Graceful shutdown
+	go func() {
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		s.httpServer.Shutdown(shutdownCtx)
+		// Halt the WebSocket broadcast coalescer so its pending AfterFunc
+		// timers don't fire (and leak) after the server has stopped.
+		s.jobs.Stop()
+	}()
+
+	log.Printf("🚀 Server starting on http://%s", addr)
+	log.Printf("   Dashboard: http://localhost:%d", s.config.Port)
+	log.Printf("   API:       http://localhost:%d/api", s.config.Port)
+	if s.config.AuthUser != "" {
+		log.Printf("   Auth:      enabled (user: %s)", s.config.AuthUser)
+	}
+
+	err := s.httpServer.ListenAndServe()
+	if err == http.ErrServerClosed {
+		return nil
+	}
+	return err
+}
+
+// handler builds the complete HTTP handler: API routes, the embedded web
+// UI and the middleware chain (security headers -> CORS -> auth -> logging
+// -> body limit).
+func (s *Server) handler() http.Handler {
 	mux := http.NewServeMux()
 
 	// API routes
@@ -169,45 +219,7 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 		fileServer.ServeHTTP(w, r)
 	})
 
-	addr := fmt.Sprintf("%s:%d", s.config.Addr, s.config.Port)
-
-	// Build middleware chain: CORS -> Auth -> Logging -> Handler
-	handler := s.corsMiddleware(s.basicAuthMiddleware(s.loggingMiddleware(limitBodyMiddleware(mux))))
-
-	s.httpServer = &http.Server{
-		Addr:        addr,
-		Handler:     handler,
-		ReadTimeout: 30 * time.Second,
-		// Above hubRequestTimeout: analyzing big repos (allenai/c4 lists
-		// 69k files) can take well over 30s. WebSockets are hijacked and
-		// unaffected.
-		WriteTimeout: hubRequestTimeout + 30*time.Second,
-		IdleTimeout:  120 * time.Second,
-	}
-
-	// Graceful shutdown
-	go func() {
-		<-ctx.Done()
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		s.httpServer.Shutdown(shutdownCtx)
-		// Halt the WebSocket broadcast coalescer so its pending AfterFunc
-		// timers don't fire (and leak) after the server has stopped.
-		s.jobs.Stop()
-	}()
-
-	log.Printf("🚀 Server starting on http://%s", addr)
-	log.Printf("   Dashboard: http://localhost:%d", s.config.Port)
-	log.Printf("   API:       http://localhost:%d/api", s.config.Port)
-	if s.config.AuthUser != "" {
-		log.Printf("   Auth:      enabled (user: %s)", s.config.AuthUser)
-	}
-
-	err := s.httpServer.ListenAndServe()
-	if err == http.ErrServerClosed {
-		return nil
-	}
-	return err
+	return securityHeadersMiddleware(s.corsMiddleware(s.basicAuthMiddleware(s.loggingMiddleware(limitBodyMiddleware(mux)))))
 }
 
 // registerAPIRoutes sets up all API endpoints.
@@ -256,6 +268,31 @@ func (s *Server) registerAPIRoutes(mux *http.ServeMux) {
 }
 
 // Middleware
+
+// contentSecurityPolicy limits what the web UI's pages may load. Scripts and
+// styles still need 'unsafe-inline' (the UI uses inline event handlers and
+// style attributes), so the policy mainly stops plugins, <base> hijacking,
+// framing and loads from third-party hosts. Output escaping in app.js is the
+// primary XSS defense; this is the backstop.
+const contentSecurityPolicy = "default-src 'self'; " +
+	"script-src 'self' 'unsafe-inline'; " +
+	"style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
+	"font-src 'self' https://fonts.gstatic.com; " +
+	"img-src 'self' data:; " +
+	"connect-src 'self' ws: wss:; " +
+	"object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+
+// securityHeadersMiddleware adds browser hardening headers to every response.
+func securityHeadersMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("Content-Security-Policy", contentSecurityPolicy)
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("Referrer-Policy", "no-referrer")
+		next.ServeHTTP(w, r)
+	})
+}
 
 // maxRequestBody caps API request bodies. Requests are small JSON documents;
 // without a cap a single 200 MB body pushed the server to ~680 MB of RAM.

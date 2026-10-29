@@ -31,6 +31,7 @@ type ConfigFile struct {
 	Proxy              *ProxyConfig `json:"proxy,omitempty" yaml:"proxy,omitempty"`
 	LinkMode           string       `json:"link-mode,omitempty" yaml:"link-mode,omitempty"`
 	ExportDir          string       `json:"export-dir,omitempty" yaml:"export-dir,omitempty"`
+	MirrorDir          string       `json:"mirror-dir,omitempty" yaml:"mirror-dir,omitempty"`
 }
 
 // ProxyConfig holds proxy settings for the config file.
@@ -239,6 +240,9 @@ func ApplyConfigToServer(serverCfg *Config) error {
 	}
 	if serverCfg.ExportDir == "" && fileCfg.ExportDir != "" {
 		serverCfg.ExportDir = fileCfg.ExportDir
+	}
+	if serverCfg.MirrorDir == "" && fileCfg.MirrorDir != "" {
+		serverCfg.MirrorDir = fileCfg.MirrorDir
 	}
 
 	// Apply proxy settings if not already set

@@ -68,6 +68,9 @@ type SettingsResponse struct {
 	LocalDir    string `json:"localDir,omitempty"`
 	// ExportDir is where "Export as real files" writes; empty = disabled.
 	ExportDir string `json:"exportDir,omitempty"`
+	// MirrorDir is the only directory the web UI may add mirror targets
+	// under; empty = targets can only be managed on the server.
+	MirrorDir string `json:"mirrorDir,omitempty"`
 	// LinkMode is how cache entries refer to downloaded data.
 	LinkMode string `json:"linkMode,omitempty"`
 	// Proxy settings
@@ -417,6 +420,7 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 		StorageMode:        storageMode,
 		LocalDir:           cfg.LocalDir,
 		ExportDir:          cfg.ExportDir,
+		MirrorDir:          cfg.MirrorDir,
 		LinkMode:           cfg.LinkMode,
 		ConfigFile:         ConfigPath(),
 		TargetsFile:        hfdownloader.DefaultTargetsPath(),

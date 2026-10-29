@@ -513,6 +513,41 @@ docker run --rm -v ~/.cache/huggingface:/home/hfdownloader/.cache/huggingface \
   ghcr.io/bodaay/huggingfacemodeldownloader download TheBloke/Mistral-7B-Instruct-v0.2-GGUF
 ```
 
+#### Docker environment variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `HTTP_PORT` | `8080` | Web server port for `serve` (same as `--port`) |
+| `AUTH_USER` | unset | Basic-auth username for `serve`, and the SSH login name |
+| `AUTH_PASS` | unset | Basic-auth password for `serve`, and the SSH password |
+| `SSH_ENABLE` | `false` | Start an SSH/SFTP server in the container (`true`/`false`) |
+| `SSH_PORT` | `22` | SSH server port, used only when `SSH_ENABLE=true` |
+
+`AUTH_USER` and `AUTH_PASS` must be set together, and `SSH_ENABLE` requires both.
+Flags passed on the command line override these variables.
+
+```bash
+# Web UI on port 3000 with login, plus SSH/SFTP on port 2222
+docker run -d -p 3000:3000 -p 2222:2222 \
+  -e HTTP_PORT=3000 -e SSH_ENABLE=true -e SSH_PORT=2222 \
+  -e AUTH_USER=admin -e AUTH_PASS=secret \
+  -v ~/.cache/huggingface:/home/hfdownloader/.cache/huggingface \
+  ghcr.io/bodaay/huggingfacemodeldownloader serve
+
+# Copy models out over SSH
+scp -P 2222 -r admin@localhost:.cache/huggingface/hub ./hub
+```
+
+The SSH login runs as the same user as the app, so copied files keep the right owner.
+The container starts as root only to set up SSH, then drops to the `hfdownloader` user.
+SSH host keys are generated on first start in `/etc/ssh/keys`; mount a volume there to keep them across container re-creation.
+
+#### TrueNAS SCALE
+
+A ready-made app file is in [`deploy/truenas/hfdownloader.yaml`](deploy/truenas/hfdownloader.yaml).
+In TrueNAS SCALE 24.10 or newer, open **Apps > Discover Apps > Install via YAML** and paste it in.
+Edit the dataset paths and login first; the comments at the top of the file list each value to change.
+
 ---
 
 ## Private & Gated Models

@@ -10,7 +10,7 @@ import (
 )
 
 // RebuildScriptVersion is the current version of the embedded shell script.
-const RebuildScriptVersion = "3.0.0"
+const RebuildScriptVersion = "3.0.1"
 
 // RebuildScript is the shell script content for rebuilding friendly view.
 // This can be run standalone without the Go binary.
@@ -139,7 +139,9 @@ process_repo() {
 
         # Calculate relative path from friendly location to snapshot
         local target_path="$file"
-        local rel_target="$(python3 -c "import os.path; print(os.path.relpath('$target_path', '$friendly_parent'))" 2>/dev/null || realpath --relative-to="$friendly_parent" "$target_path" 2>/dev/null)"
+        # Paths are passed as arguments, never interpolated into the Python
+        # source: file names come from the repo and may contain quotes.
+        local rel_target="$(python3 -c 'import os.path, sys; print(os.path.relpath(sys.argv[1], sys.argv[2]))' "$target_path" "$friendly_parent" 2>/dev/null || realpath --relative-to="$friendly_parent" "$target_path" 2>/dev/null)"
 
         if [ -z "$rel_target" ]; then
             # Fallback: construct relative path manually

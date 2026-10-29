@@ -218,7 +218,7 @@
     const rowsHtml = visible.map(f => `
       <div class="analysis-file">
         <span class="analysis-file-name">${escapeHtml(f.path || f.name)}</span>
-        <span class="analysis-file-size">${f.size_human || formatBytes(f.size)}</span>
+        <span class="analysis-file-size">${escapeHtml(f.size_human || formatBytes(f.size))}</span>
       </div>
     `).join('');
 
@@ -265,7 +265,7 @@
     resultDiv.innerHTML = `
       <div class="loading-state">
         <div class="spinner"></div>
-        <p>Analyzing ${repo}${revision && revision !== 'main' ? ` (${revision})` : ''}...</p>
+        <p>Analyzing ${escapeHtml(repo)}${revision && revision !== 'main' ? ` (${escapeHtml(revision)})` : ''}...</p>
       </div>
     `;
 
@@ -275,7 +275,7 @@
       if (revision) queryParams.push(`revision=${encodeURIComponent(revision)}`);
       const queryString = queryParams.length > 0 ? `?${queryParams.join('&')}` : '';
 
-      const data = await api('GET', `/analyze/${repo}${queryString}`);
+      const data = await api('GET', `/analyze/${encodeRepoPath(repo)}${queryString}`);
 
       // Check if we need user to select model vs dataset
       if (data.needsSelection) {
@@ -319,7 +319,7 @@
           <h5>Branches</h5>
           <div class="ref-list">
             ${branches.map(b => `
-              <button class="ref-btn ${b.name === 'main' ? 'ref-default' : ''}" onclick="selectRevision('${escapeHtml(b.name)}', ${data.is_dataset})">
+              <button class="ref-btn ${b.name === 'main' ? 'ref-default' : ''}" onclick="selectRevision(${jsArg(b.name)}, ${data.is_dataset})">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
                   <line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/>
                 </svg>
@@ -339,7 +339,7 @@
           <h5>Tags</h5>
           <div class="ref-list">
             ${tags.slice(0, 10).map(t => `
-              <button class="ref-btn" onclick="selectRevision('${escapeHtml(t.name)}', ${data.is_dataset})">
+              <button class="ref-btn" onclick="selectRevision(${jsArg(t.name)}, ${data.is_dataset})">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
                   <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/>
                 </svg>
@@ -433,9 +433,9 @@
           <div class="analysis-grid">
             ${t.architecture ? `<div class="analysis-stat"><div class="analysis-stat-label">Architecture</div><div class="analysis-stat-value">${escapeHtml(t.architecture)}</div></div>` : ''}
             ${t.estimated_parameters ? `<div class="analysis-stat"><div class="analysis-stat-label">Parameters</div><div class="analysis-stat-value">~${escapeHtml(t.estimated_parameters)}</div></div>` : ''}
-            ${t.hidden_size ? `<div class="analysis-stat"><div class="analysis-stat-label">Hidden Size</div><div class="analysis-stat-value">${t.hidden_size}</div></div>` : ''}
-            ${t.num_hidden_layers ? `<div class="analysis-stat"><div class="analysis-stat-label">Layers</div><div class="analysis-stat-value">${t.num_hidden_layers}</div></div>` : ''}
-            ${t.context_length ? `<div class="analysis-stat"><div class="analysis-stat-label">Context Length</div><div class="analysis-stat-value">${t.context_length.toLocaleString()} tokens</div></div>` : ''}
+            ${t.hidden_size ? `<div class="analysis-stat"><div class="analysis-stat-label">Hidden Size</div><div class="analysis-stat-value">${escapeHtml(t.hidden_size)}</div></div>` : ''}
+            ${t.num_hidden_layers ? `<div class="analysis-stat"><div class="analysis-stat-label">Layers</div><div class="analysis-stat-value">${escapeHtml(t.num_hidden_layers)}</div></div>` : ''}
+            ${t.context_length ? `<div class="analysis-stat"><div class="analysis-stat-label">Context Length</div><div class="analysis-stat-value">${escapeHtml(t.context_length.toLocaleString())} tokens</div></div>` : ''}
             ${t.precision ? `<div class="analysis-stat"><div class="analysis-stat-label">Precision</div><div class="analysis-stat-value">${escapeHtml(t.precision)}</div></div>` : ''}
           </div>
         </div>
@@ -463,7 +463,7 @@
           <div class="analysis-grid">
             ${d.pipeline_type ? `<div class="analysis-stat"><div class="analysis-stat-label">Pipeline</div><div class="analysis-stat-value">${escapeHtml(d.pipeline_type)}</div></div>` : ''}
             ${d.diffusers_version ? `<div class="analysis-stat"><div class="analysis-stat-label">Version</div><div class="analysis-stat-value">${escapeHtml(d.diffusers_version)}</div></div>` : ''}
-            ${d.variants?.length ? `<div class="analysis-stat"><div class="analysis-stat-label">Variants</div><div class="analysis-stat-value">${d.variants.join(', ')}</div></div>` : ''}
+            ${d.variants?.length ? `<div class="analysis-stat"><div class="analysis-stat-label">Variants</div><div class="analysis-stat-value">${escapeHtml(d.variants.join(', '))}</div></div>` : ''}
           </div>
         </div>
       `;
@@ -476,7 +476,7 @@
           <h4>Dataset Information</h4>
           <div class="analysis-grid">
             ${ds.primary_format ? `<div class="analysis-stat"><div class="analysis-stat-label">Format</div><div class="analysis-stat-value">${escapeHtml(ds.primary_format)}</div></div>` : ''}
-            ${ds.configs?.length ? `<div class="analysis-stat"><div class="analysis-stat-label">Configs</div><div class="analysis-stat-value">${ds.configs.join(', ')}</div></div>` : ''}
+            ${ds.configs?.length ? `<div class="analysis-stat"><div class="analysis-stat-label">Configs</div><div class="analysis-stat-value">${escapeHtml(ds.configs.join(', '))}</div></div>` : ''}
           </div>
         </div>
       `;
@@ -489,8 +489,8 @@
           <h4>LoRA Adapter Information</h4>
           <div class="analysis-grid">
             ${l.adapter_type ? `<div class="analysis-stat"><div class="analysis-stat-label">Adapter Type</div><div class="analysis-stat-value">${escapeHtml(l.adapter_type)}</div></div>` : ''}
-            ${l.rank ? `<div class="analysis-stat"><div class="analysis-stat-label">Rank (r)</div><div class="analysis-stat-value">${l.rank}</div></div>` : ''}
-            ${l.alpha ? `<div class="analysis-stat"><div class="analysis-stat-label">Alpha</div><div class="analysis-stat-value">${l.alpha}</div></div>` : ''}
+            ${l.rank ? `<div class="analysis-stat"><div class="analysis-stat-label">Rank (r)</div><div class="analysis-stat-value">${escapeHtml(l.rank)}</div></div>` : ''}
+            ${l.alpha ? `<div class="analysis-stat"><div class="analysis-stat-label">Alpha</div><div class="analysis-stat-value">${escapeHtml(l.alpha)}</div></div>` : ''}
             ${l.base_model ? `<div class="analysis-stat"><div class="analysis-stat-label">Base Model</div><div class="analysis-stat-value">${escapeHtml(l.base_model)}</div></div>` : ''}
           </div>
         </div>
@@ -504,9 +504,9 @@
           <h4>Quantized Model Information</h4>
           <div class="analysis-grid">
             ${q.method ? `<div class="analysis-stat"><div class="analysis-stat-label">Method</div><div class="analysis-stat-value">${escapeHtml(q.method.toUpperCase())}</div></div>` : ''}
-            ${q.bits ? `<div class="analysis-stat"><div class="analysis-stat-label">Bits</div><div class="analysis-stat-value">${q.bits}-bit</div></div>` : ''}
-            ${q.group_size ? `<div class="analysis-stat"><div class="analysis-stat-label">Group Size</div><div class="analysis-stat-value">${q.group_size}</div></div>` : ''}
-            ${q.backends?.length ? `<div class="analysis-stat"><div class="analysis-stat-label">Backends</div><div class="analysis-stat-value">${q.backends.slice(0,3).join(', ')}</div></div>` : ''}
+            ${q.bits ? `<div class="analysis-stat"><div class="analysis-stat-label">Bits</div><div class="analysis-stat-value">${escapeHtml(q.bits)}-bit</div></div>` : ''}
+            ${q.group_size ? `<div class="analysis-stat"><div class="analysis-stat-label">Group Size</div><div class="analysis-stat-value">${escapeHtml(q.group_size)}</div></div>` : ''}
+            ${q.backends?.length ? `<div class="analysis-stat"><div class="analysis-stat-label">Backends</div><div class="analysis-stat-value">${escapeHtml(q.backends.slice(0,3).join(', '))}</div></div>` : ''}
           </div>
         </div>
       `;
@@ -561,8 +561,8 @@
           <div class="analysis-repo">${escapeHtml(data.repo)}${branchDisplay}${changeRevisionLink}</div>
           <span class="analysis-type">${escapeHtml(data.type_description || data.type)}</span>
           <div class="analysis-meta">
-            <span>${data.file_count} files</span>
-            <span>${data.total_size_human}</span>
+            <span>${escapeHtml(data.file_count)} files</span>
+            <span>${escapeHtml(data.total_size_human)}</span>
           </div>
         </div>
         <div class="analysis-body">
@@ -586,7 +586,7 @@
             <button class="btn btn-secondary" onclick="showAdvancedOptions()">
               Advanced Options
             </button>
-            <button class="btn btn-primary" onclick="startWizardDownload('${escapeHtml(data.repo)}', ${data.is_dataset})">
+            <button class="btn btn-primary" onclick="startWizardDownload(${jsArg(data.repo)}, ${data.is_dataset})">
               Download
             </button>
           </div>
@@ -982,25 +982,25 @@
   }
 
   function actionButtonsHTML(job) {
-    const id = escapeHtml(job.id);
+    const id = jsArg(job.id);
     const status = job.status || 'queued';
     if (status === 'running') {
       return `
-          <button class="btn btn-sm btn-warning" onclick="pauseJob('${id}')">Pause</button>
-          <button class="btn btn-sm btn-danger" onclick="cancelJob('${id}')">Cancel</button>
+          <button class="btn btn-sm btn-warning" onclick="pauseJob(${id})">Pause</button>
+          <button class="btn btn-sm btn-danger" onclick="cancelJob(${id})">Cancel</button>
       `;
     }
     if (status === 'paused') {
       return `
-          <button class="btn btn-sm btn-primary" onclick="resumeJob('${id}')">Resume</button>
-          <button class="btn btn-sm btn-danger" onclick="cancelJob('${id}')">Cancel</button>
+          <button class="btn btn-sm btn-primary" onclick="resumeJob(${id})">Resume</button>
+          <button class="btn btn-sm btn-danger" onclick="cancelJob(${id})">Cancel</button>
       `;
     }
     if (status === 'queued') {
-      return `<button class="btn btn-sm btn-danger" onclick="cancelJob('${id}')">Cancel</button>`;
+      return `<button class="btn btn-sm btn-danger" onclick="cancelJob(${id})">Cancel</button>`;
     }
     // completed / failed / cancelled
-    return `<button class="btn btn-sm btn-secondary" onclick="dismissJob('${id}')">Dismiss</button>`;
+    return `<button class="btn btn-sm btn-secondary" onclick="dismissJob(${id})">Dismiss</button>`;
   }
 
   function createJobCard(job) {
@@ -1372,11 +1372,11 @@
     }
 
     return `
-      <div class="cache-card" onclick="showCacheDetails('${escapeHtml(repo.repo)}', '${escapeHtml(repo.type)}')">
+      <div class="cache-card" onclick="showCacheDetails(${jsArg(repo.repo)}, ${jsArg(repo.type)})">
         <div class="cache-card-header">
-          <span class="cache-card-type cache-type-${repo.type}">
+          <span class="cache-card-type cache-type-${escapeHtml(repo.type)}">
             ${typeIcon}
-            ${repo.type}
+            ${escapeHtml(repo.type)}
           </span>
           ${statusBadge}
         </div>
@@ -1398,7 +1398,7 @@
               <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/>
               <polyline points="13 2 13 9 20 9"/>
             </svg>
-            ${repo.fileCount} files
+            ${escapeHtml(repo.fileCount)} files
           </div>
         </div>
         <div class="cache-card-footer">
@@ -1430,11 +1430,11 @@
     }
 
     return `
-      <div class="cache-table-row" onclick="showCacheDetails('${escapeHtml(repo.repo)}', '${escapeHtml(repo.type)}')">
+      <div class="cache-table-row" onclick="showCacheDetails(${jsArg(repo.repo)}, ${jsArg(repo.type)})">
         <div class="cache-col-type">
-          <span class="cache-type-badge cache-type-${repo.type}">
+          <span class="cache-type-badge cache-type-${escapeHtml(repo.type)}">
             ${typeIcon}
-            ${repo.type}
+            ${escapeHtml(repo.type)}
           </span>
         </div>
         <div class="cache-col-repo">
@@ -1442,10 +1442,10 @@
           ${statusBadge}
         </div>
         <div class="cache-col-size">${escapeHtml(repo.sizeHuman)}</div>
-        <div class="cache-col-files">${repo.fileCount}</div>
+        <div class="cache-col-files">${escapeHtml(repo.fileCount)}</div>
         <div class="cache-col-date">${escapeHtml(repo.downloaded || '-')}</div>
         <div class="cache-col-actions">
-          <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation(); showCacheDetails('${escapeHtml(repo.repo)}', '${escapeHtml(repo.type)}')" title="View details">
+          <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation(); showCacheDetails(${jsArg(repo.repo)}, ${jsArg(repo.type)})" title="View details">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
               <circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>
             </svg>
@@ -1513,7 +1513,7 @@
   window.showCacheDetails = async function(repo, type) {
     try {
       showModal('Repository Details', '<div class="loading-state"><div class="spinner"></div></div>');
-      const data = await api('GET', `/cache/${repo}`);
+      const data = await api('GET', `/cache/${encodeRepoPath(repo)}`);
       cacheDetailFiles = data.files || null;
       cacheDetailFilesExpanded = false;
 
@@ -1584,9 +1584,9 @@
       setModalContent(`
         <div class="cache-detail-modal">
           <div class="cache-detail-header">
-            <span class="cache-detail-type cache-type-${data.type}">
+            <span class="cache-detail-type cache-type-${escapeHtml(data.type)}">
               ${typeIcon}
-              ${data.type}
+              ${escapeHtml(data.type)}
             </span>
             <div class="cache-detail-repo">
               <span class="cache-detail-owner">${escapeHtml(data.owner)}/</span>
@@ -1600,7 +1600,7 @@
               <div class="cache-detail-stat-label">Total Size</div>
             </div>
             <div class="cache-detail-stat">
-              <div class="cache-detail-stat-value">${data.fileCount}</div>
+              <div class="cache-detail-stat-value">${escapeHtml(data.fileCount)}</div>
               <div class="cache-detail-stat-label">Files</div>
             </div>
             <div class="cache-detail-stat">
@@ -1636,21 +1636,21 @@
           ${filesHtml}
 
           <div class="cache-detail-actions">
-            <button class="btn btn-primary" onclick="exportCacheRepo('${escapeHtml(data.repo)}', '${escapeHtml(data.type)}', this)"
+            <button class="btn btn-primary" onclick="exportCacheRepo(${jsArg(data.repo)}, ${jsArg(data.type)}, this)"
               title="Copy the repo as plain files into the server's export folder">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
               </svg>
               Export as real files
             </button>
-            <button class="btn btn-danger" onclick="confirmDeleteCache('${escapeHtml(data.repo)}', '${escapeHtml(data.type)}')">
+            <button class="btn btn-danger" onclick="confirmDeleteCache(${jsArg(data.repo)}, ${jsArg(data.type)})">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
                 <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
                 <line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/>
               </svg>
               Delete
             </button>
-            <a href="https://huggingface.co/${data.type === 'dataset' ? 'datasets/' : ''}${data.repo}" target="_blank" class="btn btn-secondary">
+            <a href="https://huggingface.co/${data.type === 'dataset' ? 'datasets/' : ''}${escapeHtml(encodeRepoPath(data.repo))}" target="_blank" class="btn btn-secondary">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
                 <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
                 <polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
@@ -1749,10 +1749,10 @@
           </svg>
         </div>
         <p class="delete-message">Are you sure you want to delete <strong>${escapeHtml(repo)}</strong> from the cache?</p>
-        <p class="delete-note">This will permanently remove all cached files for this ${type}. This action cannot be undone.</p>
+        <p class="delete-note">This will permanently remove all cached files for this ${escapeHtml(type)}. This action cannot be undone.</p>
         <div class="form-actions" style="margin-top: 20px;">
           <button class="btn btn-ghost" onclick="hideModal()">Cancel</button>
-          <button class="btn btn-danger" onclick="deleteCache('${escapeHtml(repo)}', '${escapeHtml(type)}')">
+          <button class="btn btn-danger" onclick="deleteCache(${jsArg(repo)}, ${jsArg(type)})">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
               <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
             </svg>
@@ -1766,7 +1766,7 @@
   // Actually delete the cache
   window.deleteCache = async function(repo, type) {
     try {
-      await api('DELETE', `/cache/${repo}?type=${type}`);
+      await api('DELETE', `/cache/${encodeRepoPath(repo)}?type=${encodeURIComponent(type)}`);
       hideModal();
       showToast(`Deleted ${repo} from cache`, 'success');
       loadCache(); // Refresh the list
@@ -2078,7 +2078,7 @@
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
                     <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
                   </svg>
-                  ${t.repoCount} repos
+                  ${escapeHtml(t.repoCount)} repos
                 </div>
               ` : ''}
               ${t.sizeHuman ? `
@@ -2086,18 +2086,18 @@
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
                     <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
                   </svg>
-                  ${t.sizeHuman}
+                  ${escapeHtml(t.sizeHuman)}
                 </div>
               ` : ''}
             </div>
             <div class="target-card-actions">
-              <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation(); selectTarget('${escapeHtml(t.name)}')" title="Select for sync">
+              <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation(); selectTarget(${jsArg(t.name)})" title="Select for sync">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
                   <polyline points="9 11 12 14 22 4"/>
                   <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
                 </svg>
               </button>
-              <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation(); removeTarget('${escapeHtml(t.name)}')" title="Remove target">
+              <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation(); removeTarget(${jsArg(t.name)})" title="Remove target">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
                   <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
                 </svg>
@@ -2177,7 +2177,7 @@
         <div class="form-group">
           <label for="targetPath">Path</label>
           <input type="text" id="targetPath" placeholder="/path/to/hf/cache" required>
-          <p class="form-hint">Absolute path to the HuggingFace cache directory</p>
+          <p class="form-hint">Absolute path to the HuggingFace cache directory (must be inside the server's <code>--mirror-dir</code>)</p>
         </div>
         <div class="form-group">
           <label for="targetDescription">Description (optional)</label>
@@ -2219,7 +2219,7 @@
     if (!confirm(`Remove target "${name}"?`)) return;
 
     try {
-      await api('DELETE', `/mirror/targets/${name}`);
+      await api('DELETE', `/mirror/targets/${encodeURIComponent(name)}`);
       showToast(`Removed target "${name}"`, 'success');
       loadMirrorTargets();
     } catch (e) {
@@ -2313,9 +2313,9 @@
 
     // Build summary badges
     summary.innerHTML = `
-      ${s.missing > 0 ? `<span class="badge badge-warning">${s.missing} to push (${s.missingSizeHuman})</span>` : ''}
-      ${s.extra > 0 ? `<span class="badge badge-info">${s.extra} extra on target</span>` : ''}
-      ${s.outdated > 0 ? `<span class="badge badge-secondary">${s.outdated} outdated</span>` : ''}
+      ${s.missing > 0 ? `<span class="badge badge-warning">${escapeHtml(s.missing)} to push (${escapeHtml(s.missingSizeHuman)})</span>` : ''}
+      ${s.extra > 0 ? `<span class="badge badge-info">${escapeHtml(s.extra)} extra on target</span>` : ''}
+      ${s.outdated > 0 ? `<span class="badge badge-secondary">${escapeHtml(s.outdated)} outdated</span>` : ''}
     `;
 
     if (!result.diffs || result.diffs.length === 0) {
@@ -2376,14 +2376,14 @@
       ${diffs.map(d => `
         <div class="diff-item">
           <div>
-            <span class="diff-item-status ${d.status}">${statusLabel(d.status)}</span>
+            <span class="diff-item-status ${escapeHtml(d.status)}">${statusLabel(d.status)}</span>
           </div>
           <div class="diff-item-type">
             ${typeIcon(d.type)}
-            ${d.type}
+            ${escapeHtml(d.type)}
           </div>
           <div class="diff-item-repo">${escapeHtml(d.repo)}</div>
-          <div class="diff-item-size">${d.sizeHuman || '-'}</div>
+          <div class="diff-item-size">${escapeHtml(d.sizeHuman || '-')}</div>
           <div class="diff-item-action">
             ${d.status === 'missing' ? `
               <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();" title="Will be pushed">
@@ -2560,7 +2560,7 @@
                    value="${escapeHtml(item.filter_value)}"
                    data-id="${escapeHtml(item.id)}"
                    data-revision="${escapeHtml(item.revision || '')}"
-                   data-size="${item.size || 0}"
+                   data-size="${escapeHtml(item.size || 0)}"
                    ${item.recommended ? 'checked' : ''}>
             <span class="selector-checkbox"></span>
             <span class="selector-content">
@@ -2635,7 +2635,7 @@
             ${dl.description ? `<span class="related-download-desc">${escapeHtml(dl.description)}</span>` : ''}
             ${dl.size_human ? `<span class="related-download-size">${escapeHtml(dl.size_human)}</span>` : ''}
           </div>
-          <button class="btn btn-secondary btn-sm" onclick="analyzeRelatedRepo('${escapeHtml(dl.repo)}')">
+          <button class="btn btn-secondary btn-sm" onclick="analyzeRelatedRepo(${jsArg(dl.repo)})">
             Analyze
           </button>
         </div>`;
@@ -2807,11 +2807,32 @@
   // Utilities
   // =========================================
 
+  // escapeHtml makes a value safe for any HTML context: element text and
+  // quoted attribute values. The previous textContent/innerHTML trick left
+  // quotes alone, so a Hub file, branch or config name containing " or '
+  // could break out of an attribute or an inline handler's string.
   function escapeHtml(str) {
-    if (!str) return '';
-    const div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML;
+    if (str === null || str === undefined) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  // jsArg renders a value as a JavaScript string literal for use inside an
+  // inline handler attribute (onclick="fn(${jsArg(x)})"): JSON-encoded so
+  // quotes, backslashes and newlines can't end the literal, then
+  // HTML-escaped because the attribute is parsed as HTML first.
+  function jsArg(value) {
+    return escapeHtml(JSON.stringify(value === null || value === undefined ? '' : String(value)));
+  }
+
+  // encodeRepoPath encodes an "owner/name" for use in a URL path, keeping
+  // the slash between the segments.
+  function encodeRepoPath(repo) {
+    return String(repo).split('/').map(encodeURIComponent).join('/');
   }
 
   function formatBytes(bytes) {

@@ -86,16 +86,41 @@ func (s *Server) handleMirrorTargetAdd(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// A target is a directory the mirror endpoints copy into, read from and
+	// (with deleteExtra) delete under, so letting any client register an
+	// arbitrary path gave the API arbitrary filesystem access. Web-added
+	// targets are confined to the operator's --mirror-dir.
+	mirrorDir := s.settingsConfig().MirrorDir
+	if mirrorDir == "" {
+		writeError(w, http.StatusBadRequest, "Adding mirror targets from the web is disabled (start the server with --mirror-dir)",
+			"start the server with --mirror-dir PATH (or set mirror-dir in the config file) to allow targets under that directory, or register targets on the server with `hfdownloader mirror target add <name> <path>`")
+		return
+	}
+
 	// Resolve to absolute path
 	absPath, err := filepath.Abs(req.Path)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "Invalid path", err.Error())
 		return
 	}
+	if !pathWithin(absPath, mirrorDir) {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("Target path must be inside %s", mirrorDir),
+			"web-managed mirror targets are confined to the server's --mirror-dir")
+		return
+	}
 
 	cfg, err := hfdownloader.LoadTargets("")
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to load targets", err.Error())
+		return
+	}
+
+	// Never repoint a target that was registered on the server (outside
+	// --mirror-dir): a client could otherwise redirect the operator's own
+	// pushes.
+	if existing, ok := cfg.Get(req.Name); ok && !pathWithin(existing.Path, mirrorDir) {
+		writeError(w, http.StatusForbidden, "Target is managed on the server",
+			fmt.Sprintf("%q points outside --mirror-dir; change it with `hfdownloader mirror target add` on the server", req.Name))
 		return
 	}
 
@@ -131,10 +156,20 @@ func (s *Server) handleMirrorTargetRemove(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	if !cfg.Remove(name) {
+	existing, ok := cfg.Get(name)
+	if !ok {
 		writeError(w, http.StatusNotFound, "Target not found", name)
 		return
 	}
+	// Only targets the web could have added (inside --mirror-dir) can be
+	// removed from the web; server-registered ones are managed with the CLI.
+	mirrorDir := s.settingsConfig().MirrorDir
+	if mirrorDir == "" || !pathWithin(existing.Path, mirrorDir) {
+		writeError(w, http.StatusForbidden, "Target is managed on the server",
+			fmt.Sprintf("remove %q with `hfdownloader mirror target remove %s` on the server", name, name))
+		return
+	}
+	cfg.Remove(name)
 
 	if err := cfg.Save(""); err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to save targets", err.Error())
@@ -184,7 +219,11 @@ func (s *Server) handleMirrorDiff(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "Failed to load targets", err.Error())
 		return
 	}
-	targetPath := targetsCfg.ResolvePath(req.Target)
+	targetPath, ok := registeredTargetPath(targetsCfg, req.Target)
+	if !ok {
+		writeError(w, http.StatusBadRequest, "Unknown mirror target", unknownTargetDetails(req.Target))
+		return
+	}
 
 	// Local cache
 	cacheDir := s.config.CacheDir
@@ -333,7 +372,11 @@ func (s *Server) handleMirrorPush(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "Failed to load targets", err.Error())
 		return
 	}
-	targetPath := targetsCfg.ResolvePath(req.Target)
+	targetPath, ok := registeredTargetPath(targetsCfg, req.Target)
+	if !ok {
+		writeError(w, http.StatusBadRequest, "Unknown mirror target", unknownTargetDetails(req.Target))
+		return
+	}
 
 	// Local cache
 	cacheDir := s.config.CacheDir
@@ -369,7 +412,11 @@ func (s *Server) handleMirrorPull(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "Failed to load targets", err.Error())
 		return
 	}
-	targetPath := targetsCfg.ResolvePath(req.Target)
+	targetPath, ok := registeredTargetPath(targetsCfg, req.Target)
+	if !ok {
+		writeError(w, http.StatusBadRequest, "Unknown mirror target", unknownTargetDetails(req.Target))
+		return
+	}
 
 	// Local cache
 	cacheDir := s.config.CacheDir
@@ -629,6 +676,53 @@ func countBlobs(repoPath string) int {
 		return nil
 	})
 	return count
+}
+
+// registeredTargetPath resolves a mirror request's target to the path of a
+// registered target. Only names from the targets file are accepted. The CLI's
+// ResolvePath also takes raw paths, but over the API that let any client copy
+// the cache to, read from, or (with deleteExtra) delete under any directory on
+// the server.
+func registeredTargetPath(cfg *hfdownloader.TargetsConfig, target string) (string, bool) {
+	t, ok := cfg.Get(target)
+	if !ok || t.Path == "" {
+		return "", false
+	}
+	return t.Path, true
+}
+
+func unknownTargetDetails(target string) string {
+	return fmt.Sprintf("%q is not a registered target name (the API does not accept paths); register it on the server with `hfdownloader mirror target add <name> <path>`", target)
+}
+
+// pathWithin reports whether path is root or inside it. Both are made
+// absolute, symlinks in their existing prefix are resolved (so a link inside
+// root can't point out of it) and the result is compared lexically.
+func pathWithin(path, root string) bool {
+	p, r := resolveExisting(path), resolveExisting(root)
+	rel, err := filepath.Rel(r, p)
+	if err != nil {
+		return false
+	}
+	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)))
+}
+
+// resolveExisting makes p absolute and resolves symlinks in its longest
+// existing prefix (the target itself need not exist yet).
+func resolveExisting(p string) string {
+	p, _ = filepath.Abs(p)
+	rest := ""
+	for cur := p; ; {
+		if real, err := filepath.EvalSymlinks(cur); err == nil {
+			return filepath.Join(real, rest)
+		}
+		parent := filepath.Dir(cur)
+		if parent == cur {
+			return p
+		}
+		rest = filepath.Join(filepath.Base(cur), rest)
+		cur = parent
+	}
 }
 
 // isValidTargetName checks if a target name contains only safe characters.
