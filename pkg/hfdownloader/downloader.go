@@ -185,6 +185,22 @@ func Download(ctx context.Context, job Job, cfg Settings, progress ProgressFunc)
 	// Per-content-hash locks (see the worker below)
 	var blobLocks sync.Map
 
+	// Non-LFS files are identified by git blob id. oidBlobs maps the ids
+	// stored during this run to their blobs; snapshots are the commits
+	// already in the cache, current first, searched for unchanged files.
+	var oidBlobs sync.Map
+	var snapshots []string
+	if useHFCache {
+		snapshots = []string{plan.Commit}
+		if existing, err := repoDir.ListSnapshots(); err == nil {
+			for _, c := range existing {
+				if c != plan.Commit {
+					snapshots = append(snapshots, c)
+				}
+			}
+		}
+	}
+
 	var skippedCount int64
 	var downloadedCount int64
 
@@ -228,8 +244,12 @@ LOOP:
 			// Serialize them: the first downloads, the rest then find the
 			// blob complete and only link it (unsloth repos, for example,
 			// ship byte-identical quants under different names).
-			if useHFCache && it.SHA256 != "" {
-				l, _ := blobLocks.LoadOrStore(it.SHA256, &sync.Mutex{})
+			lockKey := it.SHA256
+			if lockKey == "" && it.GitOID != "" {
+				lockKey = "oid:" + it.GitOID
+			}
+			if useHFCache && lockKey != "" {
+				l, _ := blobLocks.LoadOrStore(lockKey, &sync.Mutex{})
 				mu := l.(*sync.Mutex)
 				mu.Lock()
 				defer mu.Unlock()
@@ -244,6 +264,7 @@ LOOP:
 
 			var dst string
 			var skipCheck func() (bool, string, error)
+			reusedSHA := it.SHA256 // blob of a skipped file, for the manifest
 
 			if useHFCache {
 				// HF Cache mode: check blob existence
@@ -264,6 +285,23 @@ LOOP:
 						}
 						if status == BlobDownloading {
 							return true, "downloading by another process", nil
+						}
+					}
+					if it.SHA256 == "" && it.GitOID != "" {
+						// Unchanged non-LFS file: same content stored earlier
+						// in this run or in a snapshot of an earlier commit.
+						sha := ""
+						if v, ok := oidBlobs.Load(it.GitOID); ok {
+							sha = v.(string)
+						} else {
+							sha = repoDir.FindBlobByGitOID(it.RelativePath, it.GitOID, it.Size, snapshots)
+						}
+						if sha != "" && repoDir.createSnapshotSymlink(plan.Commit, it.RelativePath, sha) == nil {
+							if !cfg.NoFriendlyView {
+								repoDir.CreateFriendlySymlink(plan.Commit, it.RelativePath, filterSubdir)
+							}
+							reusedSHA = sha
+							return true, "unchanged", nil
 						}
 					}
 					return false, "", nil
@@ -303,7 +341,7 @@ LOOP:
 					// Add to manifest (skipped files are still part of the download job)
 					if manifestBuilder != nil {
 						manifestMu.Lock()
-						manifestBuilder.AddFile(it.RelativePath, it.SHA256, it.Size, it.LFS)
+						manifestBuilder.AddFile(it.RelativePath, reusedSHA, it.Size, it.LFS)
 						manifestMu.Unlock()
 					}
 				}
@@ -370,6 +408,9 @@ LOOP:
 					return
 				}
 				finalSHA256 = result.SHA256 // Use computed SHA256 from store result
+				if it.GitOID != "" {
+					oidBlobs.Store(it.GitOID, finalSHA256)
+				}
 			} else {
 				finalSHA256 = it.SHA256
 			}

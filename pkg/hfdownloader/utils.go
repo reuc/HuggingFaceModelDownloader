@@ -37,6 +37,22 @@ func ValidRevision(rev string) bool {
 	return true
 }
 
+// validGitOID reports whether s is a git object id: 40 hex characters
+// (SHA-1 repos) or 64 (SHA-256 repos).
+func validGitOID(s string) bool {
+	if len(s) != 40 && len(s) != 64 {
+		return false
+	}
+	for _, r := range s {
+		switch {
+		case r >= '0' && r <= '9', r >= 'a' && r <= 'f', r >= 'A' && r <= 'F':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 // validSHA256Hex reports whether s is a 64-character hex SHA256, the only
 // form a blob name may take. Hashes come from the repo tree, which is
 // remote-controlled (see unsafeRepoPath), and become blobs/<sha> and

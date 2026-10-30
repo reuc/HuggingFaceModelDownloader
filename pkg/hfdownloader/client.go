@@ -35,6 +35,7 @@ type hfNode struct {
 	Size   int64      `json:"size,omitempty"`
 	LFS    *hfLfsInfo `json:"lfs,omitempty"`
 	Sha256 string     `json:"sha256,omitempty"`
+	Oid    string     `json:"oid,omitempty"` // git blob id of the file (of the pointer for LFS)
 }
 
 // hfLfsInfo contains LFS metadata for large files.

@@ -74,16 +74,35 @@ func (a *Analyzer) Analyze(ctx context.Context, repo string, isDataset bool) (*R
 // AnalyzeWithRevision fetches and analyzes a HuggingFace repository at a specific revision.
 // If isDataset is false, it will first try to fetch as a model, then as a dataset if not found.
 func (a *Analyzer) AnalyzeWithRevision(ctx context.Context, repo string, isDataset bool, revision string) (*RepoInfo, error) {
+	return a.analyze(ctx, repo, isDataset, false, revision)
+}
+
+// AnalyzeModelWithRevision analyzes repo as a model even if a dataset of
+// the same name exists.
+func (a *Analyzer) AnalyzeModelWithRevision(ctx context.Context, repo, revision string) (*RepoInfo, error) {
+	return a.analyze(ctx, repo, false, true, revision)
+}
+
+// analyze is AnalyzeWithRevision; forceModel skips the model/dataset
+// auto-detection (and its ErrBothExist) and analyzes the model repo.
+func (a *Analyzer) analyze(ctx context.Context, repo string, isDataset, forceModel bool, revision string) (*RepoInfo, error) {
 	if revision == "" {
 		revision = "main"
 	}
 
 	// Fetch file tree - auto-detect model vs dataset if not explicitly a dataset
-	files, detectedIsDataset, commit, err := a.fetchFileTreeAutoDetect(ctx, repo, isDataset, revision)
+	var files []FileInfo
+	var commit string
+	var err error
+	if forceModel {
+		files, commit, err = a.fetchFileTree(ctx, repo, false, revision)
+		isDataset = false
+	} else {
+		files, isDataset, commit, err = a.fetchFileTreeAutoDetect(ctx, repo, isDataset, revision)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("fetch file tree: %w", err)
 	}
-	isDataset = detectedIsDataset
 
 	// Build RepoInfo
 	info := &RepoInfo{

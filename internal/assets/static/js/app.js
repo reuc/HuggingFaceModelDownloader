@@ -176,7 +176,9 @@
     const data = await res.json();
 
     if (!res.ok) {
-      throw new Error(data.error || 'API error');
+      const err = new Error(data.error || 'API error');
+      err.details = data.details;
+      throw err;
     }
     return data;
   }
@@ -312,17 +314,53 @@
     const branches = data.refs.filter(r => r.type === 'branch');
     const tags = data.refs.filter(r => r.type === 'tag');
 
+    const branchIcon = `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+        <line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/>
+      </svg>`;
+    // Several branches: pick one, some or all with checkboxes. One selected
+    // branch can be analyzed; any selection can be downloaded directly, one
+    // job per branch.
+    const multiBranch = branches.length > 1;
+    const current = data.branch || 'main';
+
     let branchesHtml = '';
-    if (branches.length > 0) {
+    if (multiBranch) {
+      branchesHtml = `
+        <div class="ref-group">
+          <div class="ref-group-header">
+            <h5>Branches</h5>
+            <label class="ref-select-all">
+              <input type="checkbox" id="refSelectAll" onchange="toggleAllRefBranches(this.checked)">
+              Select all
+            </label>
+          </div>
+          <div class="ref-list">
+            ${branches.map(b => `
+              <label class="ref-btn ref-check ${b.name === 'main' ? 'ref-default' : ''}">
+                <input type="checkbox" class="ref-branch-cb" value="${escapeHtml(b.name)}"
+                       ${b.name === current ? 'checked' : ''} onchange="updateRefSelection()">
+                ${branchIcon}
+                ${escapeHtml(b.name)}
+                ${b.name === 'main' ? '<span class="ref-badge">default</span>' : ''}
+              </label>
+            `).join('')}
+          </div>
+          <div class="ref-actions">
+            <span class="ref-selection-count" id="refSelectionCount"></span>
+            <button class="btn btn-secondary btn-sm" id="refAnalyzeBtn" onclick="analyzeSelectedRef(${data.is_dataset})">Analyze</button>
+            <button class="btn btn-primary btn-sm" id="refDownloadBtn" onclick="downloadSelectedRefs(${jsArg(data.repo)}, ${data.is_dataset})">Download</button>
+          </div>
+        </div>
+      `;
+    } else if (branches.length > 0) {
       branchesHtml = `
         <div class="ref-group">
           <h5>Branches</h5>
           <div class="ref-list">
             ${branches.map(b => `
               <button class="ref-btn ${b.name === 'main' ? 'ref-default' : ''}" onclick="selectRevision(${jsArg(b.name)}, ${data.is_dataset})">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
-                  <line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/>
-                </svg>
+                ${branchIcon}
                 ${escapeHtml(b.name)}
                 ${b.name === 'main' ? '<span class="ref-badge">default</span>' : ''}
               </button>
@@ -354,7 +392,9 @@
 
     showModal('Select Revision', `
       <p style="margin-bottom: 16px; color: var(--color-text-secondary);">
-        This repository has multiple versions. Select which one to analyze:
+        ${multiBranch
+          ? 'This repository has multiple branches. Select one to analyze, or select one, some or all to download:'
+          : 'This repository has multiple versions. Select which one to analyze:'}
       </p>
       ${branchesHtml}
       ${tagsHtml}
@@ -362,12 +402,85 @@
         <button class="btn btn-ghost" onclick="hideModal(); selectRevision('main', ${data.is_dataset})">Use default (main)</button>
       </div>
     `);
+    if (multiBranch) updateRefSelection();
   }
+
+  function selectedRefBranches() {
+    return Array.from(document.querySelectorAll('.ref-branch-cb:checked')).map(cb => cb.value);
+  }
+
+  // Sync the picker's buttons, count and "Select all" box with the checkboxes.
+  window.updateRefSelection = function() {
+    const all = document.querySelectorAll('.ref-branch-cb');
+    const selected = selectedRefBranches();
+    const selectAll = $('#refSelectAll');
+    if (selectAll) {
+      selectAll.checked = selected.length === all.length;
+      selectAll.indeterminate = selected.length > 0 && selected.length < all.length;
+    }
+    const count = $('#refSelectionCount');
+    if (count) count.textContent = `${selected.length} of ${all.length} selected`;
+    const analyzeBtn = $('#refAnalyzeBtn');
+    if (analyzeBtn) {
+      analyzeBtn.disabled = selected.length !== 1;
+      analyzeBtn.title = selected.length === 1 ? '' : 'Select exactly one branch to analyze';
+    }
+    const downloadBtn = $('#refDownloadBtn');
+    if (downloadBtn) {
+      downloadBtn.disabled = selected.length === 0;
+      downloadBtn.textContent = selected.length > 1 ? `Download ${selected.length} branches` : 'Download';
+    }
+  };
+
+  window.toggleAllRefBranches = function(checked) {
+    document.querySelectorAll('.ref-branch-cb').forEach(cb => { cb.checked = checked; });
+    updateRefSelection();
+  };
+
+  window.analyzeSelectedRef = function(isDataset) {
+    const selected = selectedRefBranches();
+    if (selected.length === 1) selectRevision(selected[0], isDataset);
+  };
+
+  // startDownloads starts one job per request ({label, body}), reports the
+  // outcome and opens the jobs page if any started.
+  async function startDownloads(requests, successMessage) {
+    const failed = [];
+    for (const { label, body } of requests) {
+      try {
+        await api('POST', '/download', body);
+      } catch (e) {
+        failed.push(`${label}: ${e.message}`);
+      }
+    }
+    if (failed.length === requests.length) {
+      showToast(`Failed: ${failed.join('; ')}`, 'error');
+      return;
+    }
+    if (failed.length > 0) {
+      showToast(`Some downloads failed: ${failed.join('; ')}`, 'error');
+    } else {
+      showToast(successMessage, 'success');
+    }
+    navigateTo('jobs');
+  }
+
+  // Download every selected branch in full, one job per branch.
+  window.downloadSelectedRefs = async function(repo, isDataset) {
+    const selected = selectedRefBranches();
+    if (selected.length === 0) return;
+    hideModal();
+    await startDownloads(
+      selected.map(revision => ({ label: revision, body: { repo, revision, dataset: isDataset } })),
+      `Download started: ${repo} (${selected.join(', ')})`);
+  };
 
   // Handle revision selection
   window.selectRevision = function(revision, isDataset) {
     hideModal();
-    const forceType = isDataset ? 'dataset' : null;
+    // The repo's kind is known by now; passing it keeps a name that is both
+    // a model and a dataset from asking again.
+    const forceType = isDataset ? 'dataset' : 'model';
     analyzeRepo(forceType, revision);
   };
 
@@ -817,6 +930,407 @@
       navigateTo('download');
     }
   };
+
+  // =========================================
+  // Repo Table (Bulk Download and Users/Orgs pages)
+  // =========================================
+
+  // formatContextLength shows 131072 as "128K" (exact value in the title).
+  function formatContextLength(n) {
+    if (!n) return '';
+    if (n >= 1024 && n % 1024 === 0) return `${n / 1024}K`;
+    return n.toLocaleString();
+  }
+
+  /**
+   * createRepoTable renders a selectable list of repos with Name, Arch,
+   * Parameters, Context Length, Precision and Size, filling each row in from
+   * /api/summary. Rows are {repo, kind ('model'|'dataset'|'' = auto-detect),
+   * status, summary, error, selected, private, gated}; status is 'loading'
+   * (nothing known), 'partial' (listing data, details pending), 'ok' or
+   * 'error'. With lazy, details load only for rows scrolled into view (a
+   * large account would exhaust the Hub's rate limit otherwise).
+   */
+  function createRepoTable(container, { lazy = false, filterable = false, concurrency = 4 } = {}) {
+    let rows = [];
+    let generation = 0; // bumped per setRows so stale responses are dropped
+    let queue = [];
+    let active = 0;
+    let filterText = '';
+    let filterKind = '';
+    let observer = null;
+
+    const isDataset = row => row.summary ? row.summary.is_dataset : row.kind === 'dataset';
+    const selectable = row => row.status !== 'error' && (row.status === 'ok' || !!row.kind);
+    const visible = row => (!filterText || row.repo.toLowerCase().includes(filterText)) &&
+      (!filterKind || (filterKind === 'dataset') === isDataset(row));
+    const needsDetails = row => row.status === 'loading' || row.status === 'partial';
+
+    function enqueue(index) {
+      const row = rows[index];
+      if (!row || row.queued || !needsDetails(row)) return;
+      row.queued = true;
+      queue.push(index);
+      pump();
+    }
+
+    function pump() {
+      const gen = generation;
+      while (active < concurrency && queue.length > 0) {
+        const index = queue.shift();
+        const row = rows[index];
+        if (lazy && !row.inView) {
+          row.queued = false; // scrolled past before its turn; re-queued when back in view
+          continue;
+        }
+        active++;
+        const qs = row.kind ? `?type=${row.kind}` : '';
+        api('GET', `/summary/${encodeRepoPath(row.repo)}${qs}`)
+          .then(summary => {
+            if (gen !== generation) return;
+            row.summary = summary;
+            if (row.status === 'loading') row.selected = true; // looked up to be downloaded
+            row.status = 'ok';
+          })
+          .catch(e => {
+            if (gen !== generation) return;
+            row.status = 'error';
+            row.error = e.details || e.message;
+            row.selected = false;
+          })
+          .finally(() => {
+            if (gen !== generation) return;
+            active--;
+            updateRow(index);
+            updateToolbar();
+            pump();
+          });
+      }
+    }
+
+    function rowHtml(row, i) {
+      const s = row.summary || {};
+      const dash = '<span class="bulk-empty">—</span>';
+      const cell = (text, title) => text
+        ? `<span${title ? ` title="${escapeHtml(title)}"` : ''}>${escapeHtml(text)}</span>`
+        : dash;
+      const badges = [
+        isDataset(row) ? '<span class="bulk-kind">dataset</span>' : '',
+        row.private ? '<span class="bulk-warn" title="Private: needs a token with access">private</span>' : '',
+        row.gated ? '<span class="bulk-warn" title="Gated: accept the terms on huggingface.co and set a token">gated</span>' : '',
+        s.ambiguous ? `<span class="bulk-warn" title="This name is also a dataset; the model is shown. Use datasets/${escapeHtml(row.repo)} for the dataset.">model &amp; dataset</span>` : ''
+      ].join('');
+      const name = `<td class="bulk-name-cell"><span class="bulk-name">${escapeHtml(row.repo)}</span>${badges}</td>`;
+      const checkbox = `<td><input type="checkbox" class="repo-row-cb" ${row.selected ? 'checked' : ''} ${selectable(row) ? '' : 'disabled'}></td>`;
+
+      if (row.status === 'loading') {
+        return `<tr data-index="${i}" class="bulk-row-loading">${checkbox}${name}
+          <td colspan="6"><span class="spinner-sm"></span> Looking up…</td></tr>`;
+      }
+      if (row.status === 'error') {
+        return `<tr data-index="${i}" class="bulk-row-error">${checkbox}${name}
+          <td colspan="6" class="bulk-error">${escapeHtml(row.error)}</td></tr>`;
+      }
+      const size = row.status === 'partial'
+        ? '<span class="bulk-empty" title="Loads when the row is on screen">…</span>'
+        : `<span title="${escapeHtml(s.file_count)} files">${escapeHtml(s.size_human || formatBytes(s.size))}</span>`;
+      return `<tr data-index="${i}">${checkbox}${name}
+        <td class="bulk-mono">${cell(s.architecture)}</td>
+        <td>${cell(s.parameters)}</td>
+        <td>${cell(formatContextLength(s.context_length), s.context_length ? `${s.context_length.toLocaleString()} tokens` : '')}</td>
+        <td>${cell(s.precision, s.precision_detail)}</td>
+        <td class="bulk-size">${size}</td>
+        <td><button class="btn btn-ghost btn-sm repo-analyze-btn">Analyze</button></td>
+      </tr>`;
+    }
+
+    function updateRow(index) {
+      const tr = container.querySelector(`tr[data-index="${index}"]`);
+      if (!tr) return;
+      tr.outerHTML = rowHtml(rows[index], index);
+    }
+
+    function selectedRows() {
+      return rows.filter(r => r.selected && selectable(r) && visible(r));
+    }
+
+    function updateToolbar() {
+      const status = container.querySelector('.bulk-status');
+      if (!status) return;
+      const shown = rows.filter(visible);
+      const ready = shown.filter(selectable);
+      const selected = selectedRows();
+      const pending = rows.filter(r => r.status === 'loading').length;
+      const known = selected.filter(r => r.status === 'ok');
+      const size = known.reduce((sum, r) => sum + (r.summary.size || 0), 0);
+      const unsized = selected.length - known.length;
+      const filtered = shown.length !== rows.length ? ` · ${shown.length} shown` : '';
+      status.textContent = `${rows.length} repositor${rows.length === 1 ? 'y' : 'ies'}${filtered}` +
+        `${pending ? ` · ${pending} loading` : ''} · ${selected.length} selected (${formatBytes(size)}` +
+        `${unsized ? ` + ${unsized} not yet sized` : ''})`;
+      container.querySelector('.repo-download-btn').disabled = selected.length === 0;
+      const all = container.querySelector('.repo-select-all');
+      all.disabled = ready.length === 0;
+      all.checked = ready.length > 0 && ready.every(r => r.selected);
+      all.indeterminate = !all.checked && ready.some(r => r.selected);
+    }
+
+    function render() {
+      if (observer) observer.disconnect();
+      rows.forEach(r => { r.inView = false; });
+      if (rows.length === 0) {
+        container.innerHTML = '';
+        return;
+      }
+      const filters = filterable ? `
+        <input type="search" class="repo-filter-text" placeholder="Filter by name" value="${escapeHtml(filterText)}">
+        <select class="repo-filter-kind">
+          <option value="">Models &amp; datasets</option>
+          <option value="model" ${filterKind === 'model' ? 'selected' : ''}>Models</option>
+          <option value="dataset" ${filterKind === 'dataset' ? 'selected' : ''}>Datasets</option>
+        </select>` : '';
+      container.innerHTML = `
+        <div class="card bulk-results-card">
+          <div class="bulk-toolbar">
+            <span class="bulk-status"></span>
+            <div class="bulk-toolbar-actions">
+              ${filters}
+              <button class="btn btn-primary btn-sm repo-download-btn">Download selected</button>
+            </div>
+          </div>
+          <div class="bulk-table-wrap">
+            <table class="bulk-table">
+              <thead>
+                <tr>
+                  <th><input type="checkbox" class="repo-select-all" title="Select all shown"></th>
+                  <th>Name</th><th>Arch</th><th>Parameters</th><th>Context Length</th><th>Precision</th><th>Size</th><th></th>
+                </tr>
+              </thead>
+              <tbody>${rows.map((r, i) => visible(r) ? rowHtml(r, i) : '').join('')}</tbody>
+            </table>
+          </div>
+          <p class="form-hint bulk-hint">Each selected repository is downloaded in full from its main branch, one job at a time; files you already have are skipped. To pick specific quantizations or files, use Analyze.</p>
+        </div>
+      `;
+      updateToolbar();
+      if (lazy) observeRows();
+    }
+
+    // Queue details for rows as they scroll into view.
+    function observeRows() {
+      observer = new IntersectionObserver(entries => {
+        for (const entry of entries) {
+          const index = Number(entry.target.dataset.index);
+          if (rows[index]) rows[index].inView = entry.isIntersecting;
+          if (entry.isIntersecting) enqueue(index);
+        }
+      }, { rootMargin: '200px' });
+      container.querySelectorAll('tbody tr').forEach(tr => {
+        if (needsDetails(rows[Number(tr.dataset.index)])) observer.observe(tr);
+      });
+    }
+
+    async function download() {
+      const selected = selectedRows();
+      if (selected.length === 0) return;
+      const start = () => startDownloads(
+        selected.map(r => ({
+          label: r.repo,
+          body: { repo: r.repo, revision: 'main', dataset: isDataset(r) }
+        })),
+        `Queued ${selected.length} download${selected.length === 1 ? '' : 's'}`);
+      if (selected.length <= 10) {
+        await start();
+        return;
+      }
+      showModal('Download repositories', `
+        <p style="margin-bottom: 16px;">Queue <strong>${selected.length}</strong> repositories for download? They run one at a time.</p>
+        <div class="form-actions">
+          <button class="btn btn-secondary" onclick="hideModal()">Cancel</button>
+          <button class="btn btn-primary" id="repoConfirmDownload">Queue ${selected.length} downloads</button>
+        </div>
+      `);
+      $('#repoConfirmDownload').addEventListener('click', () => {
+        hideModal();
+        start();
+      });
+    }
+
+    // Event delegation: the table is re-rendered, the container is not.
+    container.addEventListener('change', e => {
+      const t = e.target;
+      if (t.classList.contains('repo-row-cb')) {
+        rows[Number(t.closest('tr').dataset.index)].selected = t.checked;
+        updateToolbar();
+      } else if (t.classList.contains('repo-select-all')) {
+        rows.forEach((r, i) => {
+          if (visible(r) && selectable(r)) {
+            r.selected = t.checked;
+            const cb = container.querySelector(`tr[data-index="${i}"] .repo-row-cb`);
+            if (cb) cb.checked = t.checked;
+          }
+        });
+        updateToolbar();
+      } else if (t.classList.contains('repo-filter-kind')) {
+        filterKind = t.value;
+        render();
+      }
+    });
+    container.addEventListener('input', e => {
+      if (!e.target.classList.contains('repo-filter-text')) return;
+      filterText = e.target.value.trim().toLowerCase();
+      const pos = e.target.selectionStart;
+      render();
+      const input = container.querySelector('.repo-filter-text');
+      input.focus();
+      input.setSelectionRange(pos, pos);
+    });
+    container.addEventListener('click', e => {
+      if (e.target.closest('.repo-download-btn')) {
+        download();
+        return;
+      }
+      const btn = e.target.closest('.repo-analyze-btn');
+      if (!btn) return;
+      const row = rows[Number(btn.closest('tr').dataset.index)];
+      const input = $('#analyzeInput');
+      if (input) input.value = row.repo;
+      navigateTo('analyze');
+      analyzeRepo(isDataset(row) ? 'dataset' : (row.kind || row.summary?.ambiguous ? 'model' : null));
+    });
+
+    return {
+      setRows(newRows) {
+        generation++;
+        queue = [];
+        active = 0;
+        filterText = '';
+        filterKind = '';
+        rows = newRows;
+        render();
+        if (!lazy) rows.forEach((_, i) => enqueue(i));
+      },
+      clear() { this.setRows([]); }
+    };
+  }
+
+  // =========================================
+  // Bulk Download Page
+  // =========================================
+
+  let bulkTable = null;
+
+  function initBulkPage() {
+    const results = $('#bulkResults');
+    if (!results) return;
+    bulkTable = createRepoTable(results);
+    $('#bulkForm')?.addEventListener('submit', (e) => {
+      e.preventDefault();
+      runBulkLookup();
+    });
+    $('#bulkClearBtn')?.addEventListener('click', () => {
+      $('#bulkInput').value = '';
+      bulkTable.clear();
+    });
+  }
+
+  // parseBulkEntry turns "owner/name", "datasets/owner/name" or a
+  // huggingface.co URL into {repo, kind}; kind '' means auto-detect.
+  function parseBulkEntry(raw) {
+    let s = raw.trim().replace(/^https?:\/\//i, '').replace(/^(www\.)?(huggingface\.co|hf\.co)\//i, '');
+    s = s.split(/[?#]/)[0].replace(/^\/+|\/+$/g, '');
+    let kind = '';
+    if (/^datasets\//i.test(s)) {
+      kind = 'dataset';
+      s = s.slice('datasets/'.length);
+    } else if (/^models\//i.test(s)) {
+      kind = 'model';
+      s = s.slice('models/'.length);
+    }
+    // Drop URL tails such as /tree/main or /blob/main/config.json.
+    const parts = s.split('/').filter(Boolean);
+    const cut = parts.findIndex(p => ['tree', 'blob', 'resolve', 'commit', 'discussions'].includes(p));
+    const segs = (cut === -1 ? parts : parts.slice(0, cut)).slice(0, 2);
+    if (segs.length === 0 || segs.some(p => !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(p))) return null;
+    return { repo: segs.join('/'), kind };
+  }
+
+  function runBulkLookup() {
+    const entries = ($('#bulkInput')?.value || '').split(/[,\n]+/).map(e => e.trim()).filter(Boolean);
+    if (entries.length === 0) {
+      showToast('Paste at least one repository', 'error');
+      return;
+    }
+
+    const seen = new Set();
+    const rows = [];
+    for (const entry of entries) {
+      const parsed = parseBulkEntry(entry);
+      if (!parsed) {
+        rows.push({ repo: entry, kind: '', status: 'error', error: 'Not a repository ID' });
+        continue;
+      }
+      const key = `${parsed.kind}:${parsed.repo}`.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      rows.push({ ...parsed, status: 'loading' });
+    }
+    bulkTable.setRows(rows);
+  }
+
+  // =========================================
+  // Users/Orgs Page
+  // =========================================
+
+  let authorTable = null;
+  let authorGeneration = 0;
+
+  function initAuthorPage() {
+    const results = $('#authorResults');
+    if (!results) return;
+    authorTable = createRepoTable(results, { lazy: true, filterable: true, concurrency: 3 });
+    $('#authorForm')?.addEventListener('submit', (e) => {
+      e.preventDefault();
+      loadAuthor();
+    });
+  }
+
+  async function loadAuthor() {
+    // Accept a name, @name or a huggingface.co profile URL.
+    const raw = ($('#authorInput')?.value || '').trim()
+      .replace(/^https?:\/\//i, '').replace(/^(www\.)?(huggingface\.co|hf\.co)\//i, '')
+      .replace(/^(organizations|users)\//i, '').replace(/^@/, '').split(/[/?#]/)[0];
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(raw)) {
+      showToast('Enter a user or organization name', 'error');
+      return;
+    }
+
+    const generation = ++authorGeneration;
+    const status = $('#authorStatus');
+    authorTable.clear();
+    status.innerHTML = `<div class="loading-state"><div class="spinner"></div><p>Listing ${escapeHtml(raw)}'s repositories...</p></div>`;
+    try {
+      const data = await api('GET', `/author/${encodeURIComponent(raw)}`);
+      if (generation !== authorGeneration) return;
+      const models = data.repos.filter(r => !r.is_dataset).length;
+      const datasets = data.repos.length - models;
+      status.innerHTML = data.repos.length === 0
+        ? `<p class="form-hint">${escapeHtml(raw)} has no public models or datasets.</p>`
+        : `<p class="author-summary"><strong>${escapeHtml(data.author)}</strong>: ${models} model${models === 1 ? '' : 's'}, ${datasets} dataset${datasets === 1 ? '' : 's'}, newest first. Tick the ones to download; sizes load as rows scroll into view.</p>`;
+      authorTable.setRows(data.repos.map(r => ({
+        repo: r.repo,
+        kind: r.is_dataset ? 'dataset' : 'model',
+        status: 'partial',
+        summary: r,
+        selected: false, // the user picks what to download
+        private: r.private,
+        gated: r.gated
+      })));
+    } catch (e) {
+      if (generation !== authorGeneration) return;
+      status.innerHTML = `<p class="bulk-error">${escapeHtml(e.details || e.message)}</p>`;
+    }
+  }
 
   // =========================================
   // Download Page
@@ -2852,6 +3366,8 @@
     initWebSocket();
     initAnalyzePage();
     initDownloadPage();
+    initBulkPage();
+    initAuthorPage();
     initCachePage();
     initSettingsPage();
     initMirrorPage();

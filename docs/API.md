@@ -614,7 +614,7 @@ Analyze a HuggingFace repository.
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `dataset` | boolean | Force dataset type |
+| `dataset` | boolean | `true` analyzes the dataset, `false` the model; omit to auto-detect |
 | `revision` | string | Branch/tag to analyze |
 
 **Response** `200 OK` (Determined type)
@@ -704,6 +704,76 @@ curl "http://localhost:8080/api/analyze/facebook/flores?dataset=true"
 # Specific revision
 curl "http://localhost:8080/api/analyze/owner/repo?revision=v1.0"
 ```
+
+#### GET /api/summary/{repo}
+
+One-row overview of a repository's main branch, used by the web UI's Bulk
+Download page. Fields the repo doesn't reveal are omitted (datasets have
+only size).
+
+**Query Parameters**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `type` | string | `model` or `dataset`; omit to auto-detect. A repo that is both is summarized as the model with `"ambiguous": true` |
+
+**Response** `200 OK`
+
+```json
+{
+  "repo": "bartowski/Qwen2.5-7B-Instruct-GGUF",
+  "is_dataset": false,
+  "type": "gguf",
+  "architecture": "qwen2",
+  "parameters": "7.6B",
+  "context_length": 32768,
+  "precision": "GGUF (24 quants)",
+  "precision_detail": "F16, IQ2_M, IQ3_M, ...",
+  "size": 121058967173,
+  "size_human": "112.7 GiB",
+  "file_count": 27
+}
+```
+
+Parameters come from the Hub's safetensors/GGUF metadata when available,
+else an estimate from `config.json` (prefixed `~`). Errors are as for
+`/api/analyze`.
+
+```bash
+curl "http://localhost:8080/api/summary/OpenAssistant/oasst1?type=dataset"
+```
+
+#### GET /api/author/{name}
+
+Every model and dataset of a user or organization (up to 10,000 of each),
+most recently modified first, for the web UI's Users/Orgs page. Each entry
+has the `/api/summary` fields the Hub's listing reveals (architecture,
+parameters, precision; context length for GGUF; no size) with
+`"partial": true` — fetch `/api/summary/{repo}` for the rest.
+
+**Response** `200 OK`
+
+```json
+{
+  "author": "OpenAssistant",
+  "repos": [
+    {
+      "repo": "OpenAssistant/falcon-40b-megacode2-oasst",
+      "is_dataset": false,
+      "architecture": "FalconForCausalLM",
+      "parameters": "41.3B",
+      "precision": "BF16",
+      "partial": true,
+      "gated": false,
+      "last_modified": "2023-08-18T09:06:07.000Z",
+      "downloads": 120
+    }
+  ]
+}
+```
+
+Errors: `400` for an invalid name, `404` when no user or organization has
+the name (an account without public repos returns an empty list).
 
 ---
 

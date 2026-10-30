@@ -45,6 +45,10 @@ type PlanItem struct {
 	URL          string `json:"url"`
 	LFS          bool   `json:"lfs"`
 	SHA256       string `json:"sha256,omitempty"`
+	// GitOID is the git blob id of a non-LFS file: it identifies the
+	// content, so an unchanged file needn't be downloaded again (non-LFS
+	// files carry no SHA256).
+	GitOID       string `json:"oid,omitempty"`
 	Size         int64  `json:"size"`
 	AcceptRanges bool   `json:"acceptRanges"`
 	// Subdir holds the matched filter (if any) used when --append-filter-subdir is set.
@@ -168,11 +172,18 @@ func scanRepo(ctx context.Context, httpc *http.Client, token string, job Job, cf
 			return fmt.Errorf("refusing unsafe sha256 from repo tree for %q: %q", rel, sha)
 		}
 
+		// For LFS files the oid is the pointer's, not the content's.
+		oid := ""
+		if !isLFS && validGitOID(n.Oid) {
+			oid = strings.ToLower(n.Oid)
+		}
+
 		items = append(items, PlanItem{
 			RelativePath: rel,
 			URL:          urlStr,
 			LFS:          isLFS,
 			SHA256:       sha,
+			GitOID:       oid,
 			Size:         size,
 			AcceptRanges: acceptRanges,
 		})

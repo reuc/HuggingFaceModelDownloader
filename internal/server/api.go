@@ -675,8 +675,10 @@ func (s *Server) handleAnalyze(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check if it's a dataset (explicit selection)
+	// Explicit selection: dataset=true or dataset=false (model); absent
+	// means auto-detect.
 	isDataset := r.URL.Query().Get("dataset") == "true"
+	forceModel := r.URL.Query().Get("dataset") == "false"
 
 	// Get revision (defaults to "main")
 	revision := r.URL.Query().Get("revision")
@@ -684,23 +686,18 @@ func (s *Server) handleAnalyze(w http.ResponseWriter, r *http.Request) {
 		revision = "main"
 	}
 
-	// Create analyzer with the configured proxy (it used to connect directly
-	// even when a proxy was set). Locked snapshot of the settings.
-	cfg := s.settingsConfig()
-	opts := smartdl.AnalyzerOptions{
-		Token:    cfg.Token,
-		Endpoint: cfg.Endpoint,
-	}
-	if client, err := hfdownloader.BuildHTTPClient(cfg.Proxy); err == nil {
-		opts.HTTPClient = client
-	}
-	analyzer := smartdl.NewAnalyzer(opts)
-
 	// Analyze with timeout
 	ctx, cancel := context.WithTimeout(r.Context(), hubRequestTimeout)
 	defer cancel()
 
-	info, err := analyzer.AnalyzeWithRevision(ctx, repo, isDataset, revision)
+	analyzer := s.newAnalyzer()
+	var info *smartdl.RepoInfo
+	var err error
+	if forceModel {
+		info, err = analyzer.AnalyzeModelWithRevision(ctx, repo, revision)
+	} else {
+		info, err = analyzer.AnalyzeWithRevision(ctx, repo, isDataset, revision)
+	}
 	if err != nil {
 		// Check if both model and dataset exist
 		if errors.Is(err, smartdl.ErrBothExist) { // the analyzer wraps it
@@ -717,6 +714,72 @@ func (s *Server) handleAnalyze(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, info)
+}
+
+// newAnalyzer creates an analyzer with the configured token, endpoint and
+// proxy (it used to connect directly even when a proxy was set). Locked
+// snapshot of the settings.
+func (s *Server) newAnalyzer() *smartdl.Analyzer {
+	cfg := s.settingsConfig()
+	opts := smartdl.AnalyzerOptions{
+		Token:    cfg.Token,
+		Endpoint: cfg.Endpoint,
+	}
+	if client, err := hfdownloader.BuildHTTPClient(cfg.Proxy); err == nil {
+		opts.HTTPClient = client
+	}
+	return smartdl.NewAnalyzer(opts)
+}
+
+// handleSummary returns a one-row overview of a repo (architecture,
+// parameters, context length, precision, size) for the bulk download page.
+// ?type=model|dataset skips auto-detection; a repo that is both is
+// summarized as the model and flagged ambiguous.
+func (s *Server) handleSummary(w http.ResponseWriter, r *http.Request) {
+	repo := r.PathValue("repo")
+	if repo == "" {
+		writeError(w, http.StatusBadRequest, "Missing repository", "Format: /api/summary/owner/name")
+		return
+	}
+	kind := r.URL.Query().Get("type")
+	if kind != "" && kind != "model" && kind != "dataset" {
+		writeError(w, http.StatusBadRequest, "Invalid type", "type must be model or dataset")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), hubRequestTimeout)
+	defer cancel()
+
+	summary, err := s.newAnalyzer().Summarize(ctx, repo, kind)
+	if err != nil {
+		writeError(w, hubErrorStatus(err), "Analysis failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, summary)
+}
+
+// handleAuthor lists every model and dataset of a user or organization for
+// the web UI's Users/Orgs page.
+func (s *Server) handleAuthor(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	if !isValidRepoComponent(name) {
+		writeError(w, http.StatusBadRequest, "Invalid name", "A user or organization name has letters, digits, '-', '_' and '.'")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), hubRequestTimeout)
+	defer cancel()
+
+	repos, err := s.newAnalyzer().ListAuthor(ctx, name)
+	if err != nil {
+		status := hubErrorStatus(err)
+		if errors.Is(err, smartdl.ErrAuthorNotFound) {
+			status = http.StatusNotFound
+		}
+		writeError(w, status, "Listing failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"author": name, "repos": repos})
 }
 
 // --- Cache Browser ---

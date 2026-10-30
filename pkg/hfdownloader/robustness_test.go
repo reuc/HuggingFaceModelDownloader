@@ -220,6 +220,7 @@ func TestValidate_StallTimeout(t *testing.T) {
 type fakeHub struct {
 	commit        string
 	files         map[string][]byte // path → content (all served as LFS)
+	small         map[string][]byte // path → content of non-LFS files (raw route)
 	treeAcceptSHA bool
 	fileAcceptSHA bool
 	fileDelay     time.Duration // delay before serving file bodies
@@ -248,7 +249,18 @@ func (h *fakeHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			nodes = append(nodes, hfNode{Type: "file", Path: path, Size: 100,
 				LFS: &hfLfsInfo{Oid: hex.EncodeToString(sum[:]), Size: int64(len(data))}})
 		}
+		for path, data := range h.small {
+			nodes = append(nodes, hfNode{Type: "file", Path: path, Size: int64(len(data)), Oid: gitBlobOID(data)})
+		}
 		json.NewEncoder(w).Encode(nodes)
+	case strings.HasPrefix(p, "/o/r/raw/"):
+		_, path, _ := strings.Cut(strings.TrimPrefix(p, "/o/r/raw/"), "/")
+		data, ok := h.small[path]
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		http.ServeContent(w, r, path, time.Time{}, bytes.NewReader(data))
 	case strings.HasPrefix(p, "/o/r/resolve/"):
 		rest := strings.TrimPrefix(p, "/o/r/resolve/")
 		rev, path, _ := strings.Cut(rest, "/")
