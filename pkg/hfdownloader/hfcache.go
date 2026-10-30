@@ -446,6 +446,38 @@ func (r *RepoDir) ListSnapshots() ([]string, error) {
 	return commits, nil
 }
 
+// FindBlobByGitOID finds a non-LFS file already in the cache: the file at
+// relativePath in any of the given snapshots whose content has git blob id
+// oid. It returns the file's blob SHA256, or "" if there is none. After a
+// branch moves to a new commit, this is how unchanged small files are
+// reused instead of downloaded again.
+func (r *RepoDir) FindBlobByGitOID(relativePath, oid string, size int64, commits []string) string {
+	if unsafeRepoPath(relativePath) || !validGitOID(oid) {
+		return ""
+	}
+	for _, commit := range commits {
+		if !validSnapshotName(commit) {
+			continue
+		}
+		p := r.SnapshotPath(commit, relativePath)
+		if fi, err := os.Stat(p); err != nil || fi.Size() != size || !matchesGitOID(p, oid) {
+			continue
+		}
+		// A symlinked snapshot file names its blob; a hardlinked or copied
+		// one has to be hashed.
+		var sha string
+		if target, err := os.Readlink(p); err == nil && validSHA256Hex(filepath.Base(target)) {
+			sha = filepath.Base(target)
+		} else if sha, err = computeSHA256(p); err != nil {
+			continue
+		}
+		if status, _, err := r.CheckBlob(sha); err == nil && status == BlobComplete {
+			return sha
+		}
+	}
+	return ""
+}
+
 // --- Friendly View Management ---
 
 // CreateFriendlySymlink links the friendly view file

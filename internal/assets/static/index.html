@@ -34,6 +34,20 @@
           </svg>
           <span>Download</span>
         </a>
+        <a href="#" class="nav-item" data-page="bulk">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/>
+            <line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>
+          </svg>
+          <span>Bulk Download</span>
+        </a>
+        <a href="#" class="nav-item" data-page="author">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
+            <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+          </svg>
+          <span>Users/Orgs</span>
+        </a>
         <a href="#" class="nav-item" data-page="jobs">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
@@ -235,6 +249,59 @@
       </section>
 
       <!-- Jobs Page -->
+      <!-- Bulk Download Page -->
+      <section class="page" id="page-bulk">
+        <header class="page-header">
+          <div>
+            <h1>Bulk Download</h1>
+            <p class="page-subtitle">Look up a list of models and datasets, then download the ones you pick</p>
+          </div>
+        </header>
+
+        <div class="bulk-container">
+        <div class="card bulk-input-card">
+          <form id="bulkForm" class="download-form card-body">
+            <div class="form-group">
+              <label for="bulkInput">Repositories</label>
+              <textarea id="bulkInput" rows="4" spellcheck="false"
+                placeholder="meta-llama/Llama-3.1-8B, bartowski/Qwen2.5-7B-Instruct-GGUF, datasets/HuggingFaceFW/fineweb-edu"></textarea>
+              <p class="form-hint">Separate with commas (or new lines). Models and datasets are auto-detected; prefix a dataset with <code>datasets/</code> or paste its huggingface.co URL to be explicit.</p>
+            </div>
+            <div class="form-actions">
+              <button type="button" class="btn btn-ghost" id="bulkClearBtn">Clear</button>
+              <button type="submit" class="btn btn-primary">Look up</button>
+            </div>
+          </form>
+        </div>
+
+        <div id="bulkResults"></div>
+        </div>
+      </section>
+
+      <!-- Users/Orgs Page -->
+      <section class="page" id="page-author">
+        <header class="page-header">
+          <div>
+            <h1>Users/Orgs</h1>
+            <p class="page-subtitle">List every model and dataset of a user or organization and download them</p>
+          </div>
+        </header>
+
+        <div class="bulk-container">
+          <form id="authorForm" class="search-box author-search">
+            <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
+            </svg>
+            <input type="text" id="authorInput" class="search-input"
+              placeholder="User or organization (e.g., bartowski, Qwen or huggingface.co/OpenAssistant)"
+              autocomplete="off" spellcheck="false">
+            <button type="submit" class="btn btn-primary">List repositories</button>
+          </form>
+          <div id="authorStatus"></div>
+          <div id="authorResults"></div>
+        </div>
+      </section>
+
       <section class="page" id="page-jobs">
         <header class="page-header">
           <div>

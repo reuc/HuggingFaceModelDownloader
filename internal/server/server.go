@@ -245,6 +245,8 @@ func (s *Server) registerAPIRoutes(mux *http.ServeMux) {
 
 	// Smart Analyzer
 	mux.HandleFunc("GET /api/analyze/{repo...}", s.handleAnalyze)
+	mux.HandleFunc("GET /api/summary/{repo...}", s.handleSummary)
+	mux.HandleFunc("GET /api/author/{name}", s.handleAuthor)
 
 	// Cache browser
 	mux.HandleFunc("GET /api/cache", s.handleCacheList)

@@ -237,3 +237,46 @@ func nextLink(header string, base *url.URL) string {
 	}
 	return ""
 }
+
+// List fetches a paginated JSON array (the Hub's model/dataset listings)
+// starting at u, following rel="next" links on the same host, and calls fn
+// for each element. max > 0 stops after that many elements.
+func List[T any](ctx context.Context, o Options, u string, max int, fn func(T) error) error {
+	if o.Retries <= 0 {
+		o.Retries = 5
+	}
+	start, err := url.Parse(u)
+	if err != nil {
+		return err
+	}
+	n := 0
+	for next := u; next != ""; {
+		resp, err := get(ctx, o, next)
+		if err != nil {
+			return err
+		}
+		var items []T
+		err = json.NewDecoder(resp.Body).Decode(&items)
+		link := resp.Header.Get("Link")
+		reqURL := resp.Request.URL
+		resp.Body.Close()
+		if err != nil {
+			return fmt.Errorf("decode listing: %w", err)
+		}
+		for _, it := range items {
+			if max > 0 && n >= max {
+				return nil
+			}
+			n++
+			if err := fn(it); err != nil {
+				return err
+			}
+		}
+		next = nextLink(link, reqURL)
+		// Credentials go only to the endpoint we were given.
+		if p, err := url.Parse(next); err != nil || p.Host != start.Host || p.Scheme != start.Scheme {
+			next = ""
+		}
+	}
+	return nil
+}

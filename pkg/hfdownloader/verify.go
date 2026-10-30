@@ -5,9 +5,12 @@ package hfdownloader
 
 import (
 	"context"
+	"crypto/sha1"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"hash"
+	"io"
 	"net/http"
 	"os"
 	"strings"
@@ -86,6 +89,34 @@ func computeSHA256Ctx(ctx context.Context, path string, onProgress func(done int
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
+// matchesGitOID reports whether the file at path is the git blob oid: the
+// SHA-1 (or, for 64-character ids, SHA-256) of "blob <size>\x00" + content.
+func matchesGitOID(path, oid string) bool {
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	fi, err := f.Stat()
+	if err != nil || !fi.Mode().IsRegular() {
+		return false
+	}
+	var h hash.Hash
+	switch len(oid) {
+	case 40:
+		h = sha1.New()
+	case 64:
+		h = sha256.New()
+	default:
+		return false
+	}
+	fmt.Fprintf(h, "blob %d\x00", fi.Size())
+	if _, err := io.Copy(h, f); err != nil {
+		return false
+	}
+	return strings.EqualFold(hex.EncodeToString(h.Sum(nil)), oid)
+}
+
 // verifySHA256 computes the SHA256 of a file and compares it to expected.
 func verifySHA256(path string, expected string) error {
 	sum, err := computeSHA256(path)
@@ -150,7 +181,16 @@ func shouldSkipLocal(it PlanItem, dst string) (bool, string, error) {
 		return false, "", nil
 	}
 
-	// Non-LFS (or unknown sha): size match is sufficient
+	// Non-LFS with a git oid: the content must match it (a changed file
+	// of the same size used to be skipped).
+	if it.GitOID != "" {
+		if matchesGitOID(dst, it.GitOID) {
+			return true, "unchanged", nil
+		}
+		return false, "", nil
+	}
+
+	// Unknown hash: size match is sufficient
 	if it.Size > 0 && fi.Size() == it.Size {
 		return true, "size match", nil
 	}

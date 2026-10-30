@@ -186,6 +186,10 @@ hfdownloader download TheBloke/Mistral-7B-Instruct-v0.2-GGUF -F q4_k_m -E ".md,f
 # Interrupted? Just run again - automatically resumes
 hfdownloader download owner/repo
 
+# Branch updated upstream? Run again - only new or changed files are
+# downloaded; unchanged ones (matched by content hash) are reused
+hfdownloader download owner/repo
+
 # Large (LFS) files are always SHA256-verified; --verify sets the check
 # for the remaining files (none|size|etag|sha256, default size)
 hfdownloader download owner/repo --verify sha256
