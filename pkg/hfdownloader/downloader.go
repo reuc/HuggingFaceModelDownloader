@@ -215,8 +215,12 @@ func Download(ctx context.Context, job Job, cfg Settings, progress ProgressFunc)
 	}
 	addFlat := func(rel, sha string, keep bool) {
 		if flatten {
+			src := ""
+			if validSHA256Hex(sha) {
+				src = repoDir.BlobPath(sha)
+			}
 			flatMu.Lock()
-			flatFiles = append(flatFiles, flatFile{rel: rel, sha: sha, keep: keep})
+			flatFiles = append(flatFiles, flatFile{rel: rel, src: src, keep: keep})
 			flatMu.Unlock()
 		}
 	}

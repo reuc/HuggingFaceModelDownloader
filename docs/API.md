@@ -985,6 +985,42 @@ Response `200 OK`:
 are included only when set. Errors: `400` (export disabled, invalid body or
 repo id), `404` (repo/revision not in the cache), `500` (other failures).
 
+#### POST /api/cache/flatten
+
+Convert a cached repo to real files in `models/<owner>/<name>` (or
+`datasets/...`) and delete its `hub/` entry, like CLI `flatten`. Nothing is
+downloaded. The web UI's **Convert to real files** button calls this.
+
+Request body (`type` defaults to `model`; `revision` defaults to the last
+downloaded one, else `main`; `force` also deletes other cached revisions and
+unfinished downloads):
+
+```json
+{ "repo": "TheBloke/Mistral-7B-Instruct-v0.2-GGUF", "type": "model", "force": false }
+```
+
+Response `200 OK`:
+
+```json
+{ "repo": "TheBloke/Mistral-7B-Instruct-v0.2-GGUF", "commit": "41b61a3...",
+  "path": "/cache/models/TheBloke/Mistral-7B-Instruct-v0.2-GGUF", "files": 4, "bytes": 4368439584 }
+```
+
+`droppedRevisions` lists deleted revisions when `force` removed any.
+
+Without `force`, a repo that has other revisions or partial download files
+cached returns `409`, and nothing changes:
+
+```json
+{ "error": "Other revisions cached", "details": "...", "commit": "41b61a3...",
+  "otherRevisions": ["9f2c1d0..."], "partialFiles": 0 }
+```
+
+Other errors: `409` while the repo has a `queued`, `running` or `paused` job
+(or another process is writing to it), `400` (invalid body, repo id or
+revision; or the repo is already flat), `404` (not in the cache), `500`
+(other failures).
+
 #### DELETE /api/cache/{repo}
 
 Delete a cached repository (blobs, snapshots and friendly-view symlinks). The

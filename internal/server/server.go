@@ -264,6 +264,7 @@ func (s *Server) registerAPIRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/cache/rebuild", s.handleCacheRebuild)
 	mux.HandleFunc("DELETE /api/cache/{repo...}", s.handleCacheDelete)
 	mux.HandleFunc("POST /api/cache/export", s.handleCacheExport)
+	mux.HandleFunc("POST /api/cache/flatten", s.handleCacheFlatten)
 
 	// Mirror - Target management
 	mux.HandleFunc("GET /api/mirror/targets", s.handleMirrorTargetsList)

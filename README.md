@@ -293,6 +293,19 @@ tokenizer = AutoTokenizer.from_pretrained(path)
 Trade-offs: only the last downloaded revision of a repo is kept, and files a
 newer commit deleted stay in the folder until you remove them.
 
+**Already downloaded?** Convert repos in `hub/` without downloading anything:
+
+```bash
+hfdownloader flatten TheBloke/Mistral-7B-Instruct-v0.2-GGUF   # one repo
+hfdownloader flatten --all                                     # everything in hub/
+```
+
+or use **Convert to real files** on a repo in the web UI's Cache browser. All
+files cached for the kept revision (the last one downloaded, else `main`) are
+moved; repos downloaded by Python's `huggingface_hub` work too. If a repo has
+other revisions or an unfinished download cached, those would be deleted, so
+it's skipped unless you pass `--yes` (the web UI asks).
+
 ### Export: plain files from what you already downloaded
 
 Need real files for LM Studio, Ollama or llama.cpp but already downloaded

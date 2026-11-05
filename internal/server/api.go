@@ -806,6 +806,9 @@ type CachedRepoInfo struct {
 	Snapshots      []string         `json:"snapshots,omitempty"`
 	Files          []CachedFileInfo `json:"files,omitempty"`
 	Manifest       *ManifestInfo    `json:"manifest,omitempty"`
+	// Storage is "flat" when the repo is stored as real files in its friendly
+	// view folder with no hub/ entry (--flatten); empty for the HF cache layout.
+	Storage string `json:"storage,omitempty"`
 }
 
 // CachedFileInfo represents a file in the cache.
@@ -979,6 +982,7 @@ func (s *Server) handleCacheList(w http.ResponseWriter, r *http.Request) {
 			Name:           rd.Name(),
 			Type:           rdType,
 			Path:           repoPath,
+			Storage:        storageName(flat),
 			FriendlyPath:   friendlyPath,
 			Size:           totalSize,
 			SizeHuman:      humanSizeBytes(totalSize),
@@ -1164,6 +1168,7 @@ func (s *Server) handleCacheInfo(w http.ResponseWriter, r *http.Request) {
 		Name:           repoDir.Name(),
 		Type:           string(repoDir.Type()),
 		Path:           infoPath,
+		Storage:        storageName(repoDir.IsFlat()),
 		FriendlyPath:   friendlyPath,
 		Size:           totalSize,
 		SizeHuman:      humanSizeBytes(totalSize),
@@ -1246,6 +1251,74 @@ func (s *Server) handleCacheRebuild(w http.ResponseWriter, r *http.Request) {
 // - Symlink attacks (symlinks pointing outside cache)
 // - TOCTOU race conditions
 // - Directory escape via prefix manipulation
+// CacheFlattenRequest asks to convert a cached repo to flat storage: real
+// files in models/ or datasets/, no hub/ entry (hfdownloader flatten).
+type CacheFlattenRequest struct {
+	Repo     string `json:"repo"`
+	Type     string `json:"type,omitempty"` // "model" (default) or "dataset"
+	Revision string `json:"revision,omitempty"`
+	// Force also flattens a repo with other revisions cached; they are
+	// deleted. Without it the request fails with 409 and lists them.
+	Force bool `json:"force,omitempty"`
+}
+
+// handleCacheFlatten moves a cached repo's files out of hub/ into its
+// friendly view folder as real files and deletes its hub/ entry. Nothing is
+// downloaded.
+func (s *Server) handleCacheFlatten(w http.ResponseWriter, r *http.Request) {
+	var req CacheFlattenRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid request", err.Error())
+		return
+	}
+	if req.Revision != "" && !hfdownloader.ValidRevision(req.Revision) {
+		writeError(w, http.StatusBadRequest, "Invalid revision", fmt.Sprintf("%q is not a branch, tag or commit", req.Revision))
+		return
+	}
+	repoType := hfdownloader.RepoTypeModel
+	if req.Type == "dataset" {
+		repoType = hfdownloader.RepoTypeDataset
+	}
+	cfg := s.settingsConfig()
+	cacheDir := cfg.CacheDir
+	if cacheDir == "" {
+		cacheDir = hfdownloader.DefaultCacheDir()
+	}
+	repoDir, err := hfdownloader.NewHFCache(cacheDir, hfdownloader.DefaultStaleTimeout).Repo(req.Repo, repoType)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid repository", err.Error())
+		return
+	}
+	// A paused job keeps its partial data in hub/, which flattening deletes.
+	if s.jobs.HasActiveJob(req.Repo, repoType == hfdownloader.RepoTypeDataset) {
+		writeError(w, http.StatusConflict, "Download in progress",
+			fmt.Sprintf("%s has a queued, running or paused download; let it finish or cancel it first", req.Repo))
+		return
+	}
+	res, err := repoDir.Flatten(hfdownloader.FlattenOptions{Revision: req.Revision, DropOtherRevisions: req.Force})
+	var other *hfdownloader.OtherRevisionsError
+	switch {
+	case err == nil:
+		writeJSON(w, http.StatusOK, res)
+	case errors.As(err, &other):
+		writeJSON(w, http.StatusConflict, map[string]any{
+			"error":          "Other revisions cached",
+			"details":        err.Error(),
+			"commit":         other.Commit,
+			"otherRevisions": other.Others,
+			"partialFiles":   other.Partial,
+		})
+	case errors.Is(err, hfdownloader.ErrAlreadyFlat):
+		writeError(w, http.StatusBadRequest, "Already real files", err.Error())
+	case strings.Contains(err.Error(), "not in the cache") || strings.Contains(err.Error(), "not found"):
+		writeError(w, http.StatusNotFound, "Flatten failed", err.Error())
+	case strings.Contains(err.Error(), "still writing"):
+		writeError(w, http.StatusConflict, "Download in progress", err.Error())
+	default:
+		writeError(w, http.StatusInternalServerError, "Flatten failed", err.Error())
+	}
+}
+
 // CacheExportRequest asks to export a cached repo as plain files.
 type CacheExportRequest struct {
 	Repo     string   `json:"repo"`
@@ -1514,6 +1587,14 @@ func safeDeleteFriendlyPath(friendlyPath, absCacheDirWithSep string) error {
 	}
 
 	return os.RemoveAll(absFriendlyPath)
+}
+
+// storageName is CachedRepoInfo.Storage for a repo.
+func storageName(flat bool) string {
+	if flat {
+		return hfdownloader.StorageFlat
+	}
+	return ""
 }
 
 // realDirWithSep returns dir with symlinks resolved (dir itself when that

@@ -80,7 +80,9 @@ func (r *RepoDir) Export(dest string, opts ExportOptions) (*ExportResult, error)
 		commit, entries, err = r.flatEntries(opts.Revision)
 	} else {
 		commit, err = r.resolveCommit(opts.Revision)
-		if err == nil {
+		if err != nil {
+			err = fmt.Errorf("export: %w", err)
+		} else {
 			entries, err = r.snapshotEntries(commit)
 		}
 	}
@@ -151,19 +153,20 @@ func exportOne(src, dst string, mode LinkMode) (LinkMode, error) {
 	}
 }
 
-// resolveCommit maps a revision to a snapshot commit.
+// resolveCommit maps a revision to a snapshot commit. Errors are unprefixed;
+// callers add context ("export: ...").
 func (r *RepoDir) resolveCommit(revision string) (string, error) {
 	rev := revision
 	if rev == "" {
 		rev = "main"
 	}
 	if !ValidRevision(rev) {
-		return "", fmt.Errorf("export: invalid revision %q", revision)
+		return "", fmt.Errorf("invalid revision %q", revision)
 	}
 	if c, err := r.ReadRef(rev); err == nil && c != "" {
 		// A ref file holds a commit hash; never follow anything else.
 		if !ValidRevision(c) || strings.Contains(c, "/") {
-			return "", fmt.Errorf("export: ref %q does not hold a commit hash", rev)
+			return "", fmt.Errorf("ref %q does not hold a commit hash", rev)
 		}
 		return c, nil
 	}
@@ -177,9 +180,9 @@ func (r *RepoDir) resolveCommit(revision string) (string, error) {
 		return snaps[0], nil
 	}
 	if len(snaps) == 0 {
-		return "", fmt.Errorf("export: %s is not in the cache (no snapshots under %s)", r.RepoID(), r.Path())
+		return "", fmt.Errorf("%s is not in the cache (no snapshots under %s)", r.RepoID(), r.Path())
 	}
-	return "", fmt.Errorf("export: revision %q not found for %s; cached snapshots: %s", rev, r.RepoID(), strings.Join(snaps, ", "))
+	return "", fmt.Errorf("revision %q not found for %s; cached snapshots: %s", rev, r.RepoID(), strings.Join(snaps, ", "))
 }
 
 // snapshotEntries lists the files in a snapshot.

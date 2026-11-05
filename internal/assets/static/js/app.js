@@ -178,6 +178,8 @@
     if (!res.ok) {
       const err = new Error(data.error || 'API error');
       err.details = data.details;
+      err.status = res.status;
+      err.data = data;
       throw err;
     }
     return data;
@@ -2053,6 +2055,40 @@
     }
   };
 
+  // Convert a cached repo to real files in models/ (or datasets/) and remove
+  // it from hub/ — the same as `hfdownloader flatten`. Nothing is downloaded.
+  window.flattenCacheRepo = async function(repo, type, btn) {
+    const msg = `Convert ${repo} to real files?\n\n` +
+      `Its files move from the HF cache (hub/) into the models folder as plain files, ` +
+      `and the hub/ entry is deleted. Nothing is downloaded.\n\n` +
+      `Python tools then load it by folder path instead of by repo id.`;
+    if (!confirm(msg)) return;
+    const run = async (force) => api('POST', '/cache/flatten', { repo, type, force });
+    if (btn) btn.disabled = true;
+    try {
+      let res;
+      try {
+        res = await run(false);
+      } catch (e) {
+        if (e.status !== 409 || !e.data?.commit) throw e;
+        const others = e.data.otherRevisions || [];
+        const lines = [];
+        if (others.length) lines.push(`${others.length} other cached revision(s): ${others.map(c => c.slice(0, 7)).join(', ')}`);
+        if (e.data.partialFiles) lines.push(`${e.data.partialFiles} partial file(s) of an unfinished download`);
+        if (!confirm(`${repo} also has:\n\n- ${lines.join('\n- ')}\n\n` +
+          `Only revision ${String(e.data.commit).slice(0, 7)} is kept; the rest is deleted. Continue?`)) return;
+        res = await run(true);
+      }
+      showToast(`Converted ${repo}: ${res.files} real files in ${res.path}`, 'success');
+      hideModal();
+      loadCache();
+    } catch (e) {
+      showToast(`Convert failed: ${e.details || e.message}`, 'error');
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  };
+
   window.showCacheDetails = async function(repo, type) {
     try {
       showModal('Repository Details', '<div class="loading-state"><div class="spinner"></div></div>');
@@ -2164,10 +2200,10 @@
             <h4>Paths</h4>
             <div class="cache-detail-paths">
               <div class="cache-path-item">
-                <span class="cache-path-label">Cache (HF format)</span>
+                <span class="cache-path-label">${data.storage === 'flat' ? 'Real files' : 'Cache (HF format)'}</span>
                 <code class="cache-path-value">${escapeHtml(data.path)}</code>
               </div>
-              ${data.friendlyPath ? `
+              ${data.friendlyPath && data.storage !== 'flat' ? `
                 <div class="cache-path-item">
                   <span class="cache-path-label">Friendly view</span>
                   <code class="cache-path-value">${escapeHtml(data.friendlyPath)}</code>
@@ -2186,6 +2222,14 @@
               </svg>
               Export as real files
             </button>
+            ${data.storage !== 'flat' ? `
+            <button class="btn btn-secondary" onclick="flattenCacheRepo(${jsArg(data.repo)}, ${jsArg(data.type)}, this)"
+              title="Move the files out of hub/ into the models folder as real files (nothing is downloaded)">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><polyline points="9 14 12 17 15 14"/><line x1="12" y1="10" x2="12" y2="17"/>
+              </svg>
+              Convert to real files
+            </button>` : ''}
             <button class="btn btn-danger" onclick="confirmDeleteCache(${jsArg(data.repo)}, ${jsArg(data.type)})">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
                 <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>

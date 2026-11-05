@@ -69,6 +69,7 @@ func Execute(version string) error {
 	root.AddCommand(newInfoCmd(ro))
 	root.AddCommand(newMirrorCmd(ro))
 	root.AddCommand(newExportCmd(ro))
+	root.AddCommand(newFlattenCmd(ro))
 	root.AddCommand(newAnalyzeCmd(ctx, ro))
 	root.AddCommand(newProxyCmd(ro))
 

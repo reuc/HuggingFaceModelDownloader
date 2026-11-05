@@ -17,6 +17,7 @@ Complete command-line reference for `hfdownloader`.
   - [info](#info)
   - [rebuild](#rebuild)
   - [export](#export)
+  - [flatten](#flatten)
   - [mirror](#mirror)
   - [proxy](#proxy)
   - [config](#config)
@@ -607,6 +608,47 @@ download manifest.
 hfdownloader export TheBloke/Mistral-7B-Instruct-v0.2-GGUF ~/lmstudio/models/TheBloke/Mistral-7B
 hfdownloader export unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF ./qwen -F q4_k_m
 hfdownloader export --dataset nyu-mll/glue ./glue --mode hardlink   # no extra disk space
+```
+
+---
+
+### flatten
+
+Convert repos already in the cache to real files in `models/` (or
+`datasets/`) and remove them from `hub/` — the same result as downloading
+them with `--flatten`. Nothing is downloaded and each file is stored once.
+
+```
+hfdownloader flatten <repo>... [flags]
+hfdownloader flatten --all [flags]
+```
+
+Every file cached for one revision is kept: the revision the last download
+recorded in `hfd.yaml`, else `main`, else the only cached snapshot (choose
+another with `-b`). Repos downloaded by Python's `huggingface_hub` work too.
+A repo with other revisions or an unfinished download (partial files) cached
+is skipped, because flattening would delete those, unless you pass `--yes`.
+A repo another process is still downloading is skipped either way.
+
+#### Flags
+
+| Flag | Short | Type | Default | Description |
+|------|-------|------|---------|-------------|
+| `--cache-dir` | | string | `~/.cache/huggingface` | Cache directory |
+| `--revision` | `-b` | string | last downloaded, else `main` | Branch, tag or commit to keep (not with `--all`) |
+| `--dataset` | | bool | `false` | The repo is a dataset |
+| `--all` | | bool | `false` | Flatten every repo in `hub/` |
+| `--yes` | `-y` | bool | `false` | Also flatten repos with other revisions or unfinished downloads cached (those are deleted) |
+
+Exits non-zero if any repo was not flattened; repos that are already flat
+count as done. `--json` prints one result per repo.
+
+#### Examples
+
+```bash
+hfdownloader flatten TheBloke/Mistral-7B-Instruct-v0.2-GGUF
+hfdownloader flatten --dataset nyu-mll/glue
+hfdownloader flatten --all --yes
 ```
 
 ---
