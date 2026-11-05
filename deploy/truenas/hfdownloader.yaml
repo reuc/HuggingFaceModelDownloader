@@ -6,16 +6,18 @@
 #   Name it "hfdownloader" and paste this whole file.
 #
 # Before installing, edit the values marked  # <-- CHANGE  below:
-#   1. The two host paths under "volumes" must point at datasets on your pool.
+#   1. The three host paths under "volumes" must point at datasets on your pool.
 #   2. AUTH_USER / AUTH_PASS: the login for the web UI (and for SSH).
 #   3. HF_TOKEN: only needed for private or gated models. Remove it otherwise.
 #
 # Dataset permissions:
-#   The app runs as uid/gid 1000. Give that id write access to the cache
-#   dataset, e.g. Datasets > hfdownloader/cache > Permissions, owner 1000:1000,
-#   or from a shell:  chown -R 1000:1000 /mnt/tank/apps/hfdownloader/cache
+#   The app runs as uid/gid 1000. Give that id write access to the cache and
+#   config datasets, e.g. Datasets > hfdownloader/cache > Permissions, owner
+#   1000:1000, or from a shell:
+#     chown -R 1000:1000 /mnt/tank/apps/hfdownloader/cache /mnt/tank/apps/hfdownloader/config
 #   To run as a different uid/gid instead (e.g. 568 "apps", or an SMB share
-#   user), uncomment "user:" and "HOME:" below. SSH is unavailable that way.
+#   user), uncomment "user:" below and give that id ownership instead. SSH is
+#   unavailable that way.
 #
 # Ports:
 #   Web UI:  http://<truenas-ip>:8080
@@ -29,12 +31,11 @@ services:
     image: docker.io/reuc/hfdownloader:latest
     command: ["serve"]
     restart: unless-stopped
-    # Optional: run as this uid:gid instead of 1000:1000. Requires the HOME
-    # line below (so settings save to the cache dataset) and SSH_ENABLE "false".
+    # Optional: run as this uid:gid instead of 1000:1000. Requires
+    # SSH_ENABLE "false", and that uid must own the cache and config datasets.
     # user: "568:568"
 
     environment:
-      # HOME: "/home/hfdownloader/.cache/huggingface"   # uncomment with "user:" above
       TZ: "Etc/UTC"                  # <-- CHANGE to your timezone, e.g. America/Chicago
       HTTP_PORT: "8080"
       AUTH_USER: "admin"             # <-- CHANGE
@@ -52,6 +53,8 @@ services:
       - /mnt/tank/apps/hfdownloader/cache:/home/hfdownloader/.cache/huggingface   # <-- CHANGE
       # SSH host keys, kept so clients don't see a new key after an app update
       - /mnt/tank/apps/hfdownloader/ssh-keys:/etc/ssh/keys                        # <-- CHANGE
+      # Settings and the download queue/history, kept across app updates
+      - /mnt/tank/apps/hfdownloader/config:/home/hfdownloader/.config             # <-- CHANGE
 
     healthcheck:
       test: ["CMD-SHELL", "nc -z 127.0.0.1 $${HTTP_PORT:-8080} || exit 1"]
