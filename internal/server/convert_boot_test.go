@@ -4,6 +4,7 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -46,7 +47,7 @@ func TestConvertOnBoot(t *testing.T) {
 	srv.jobs.jobs["p"] = &Job{ID: "p", Repo: "a/paused", Status: JobStatusPaused}
 	srv.jobs.mu.Unlock()
 
-	sum := srv.convertOnBoot()
+	sum := srv.convertOnBoot(context.Background())
 	if sum != (convertSummary{Converted: 2, Skipped: 3}) {
 		t.Fatalf("summary = %+v, want 2 converted, 3 skipped", sum)
 	}
@@ -75,7 +76,7 @@ func TestConvertOnBoot(t *testing.T) {
 	}
 
 	// The next boot finds nothing new to convert.
-	if sum := srv.convertOnBoot(); sum.Converted != 0 || sum.Failed != 0 {
+	if sum := srv.convertOnBoot(context.Background()); sum.Converted != 0 || sum.Failed != 0 {
 		t.Errorf("second boot = %+v, want nothing converted", sum)
 	}
 }
@@ -84,10 +85,42 @@ func TestConvertOnBoot_LocalDirMode(t *testing.T) {
 	cacheDir := t.TempDir()
 	plain := hubRepo(t, cacheDir, "models", "a/plain", strings.Repeat("1", 40))
 	srv := New(Config{CacheDir: cacheDir, LocalDir: t.TempDir(), ConvertOnBoot: true})
-	if sum := srv.convertOnBoot(); sum != (convertSummary{}) {
+	if sum := srv.convertOnBoot(context.Background()); sum != (convertSummary{}) {
 		t.Fatalf("summary = %+v, want nothing done in --local-dir mode", sum)
 	}
 	if _, err := os.Stat(plain); err != nil {
 		t.Fatal("hub/ repo changed in --local-dir mode")
+	}
+}
+
+// Copilot review: a shutdown during the startup conversion stops it before
+// the next repo instead of converting everything first.
+func TestConvertOnBoot_StopsOnShutdown(t *testing.T) {
+	cacheDir := t.TempDir()
+	a := hubRepo(t, cacheDir, "models", "a/one", strings.Repeat("1", 40))
+	b := hubRepo(t, cacheDir, "models", "a/two", strings.Repeat("1", 40))
+	srv := New(Config{CacheDir: cacheDir, Flatten: true, ConvertOnBoot: true})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if sum := srv.convertOnBoot(ctx); sum != (convertSummary{Remaining: 2}) {
+		t.Fatalf("summary = %+v, want both left for the next start", sum)
+	}
+	for _, dir := range []string{a, b} {
+		if _, err := os.Stat(dir); err != nil {
+			t.Errorf("%s changed after shutdown: %v", dir, err)
+		}
+	}
+}
+
+// Copilot review: the logged recovery command must be one the CLI accepts.
+func TestFlattenCommand(t *testing.T) {
+	cmds := map[string]string{
+		flattenCommand("o/m", false): "hfdownloader flatten --yes o/m",
+		flattenCommand("o/d", true):  "hfdownloader flatten --yes --dataset o/d",
+	}
+	for got, want := range cmds {
+		if got != want {
+			t.Errorf("flattenCommand = %q, want %q", got, want)
+		}
 	}
 }

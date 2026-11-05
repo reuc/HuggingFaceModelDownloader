@@ -151,7 +151,7 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	// running yet and the API isn't up, so nothing can write to hub/ while
 	// repos are moved out of it.
 	if s.config.ConvertOnBoot {
-		s.convertOnBoot()
+		s.convertOnBoot(ctx)
 	}
 
 	// Resume downloads restored from the saved job list.

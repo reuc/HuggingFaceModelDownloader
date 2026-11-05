@@ -305,7 +305,9 @@ let the server do it at every start with `serve --flatten --convert-on-boot`
 (Docker: `FLATTEN=true` and `CONVERT_ON_BOOT=true`). The startup conversion
 runs before any download resumes, skips repos with a queued, running or
 paused download, and never deletes other revisions: repos that have them are
-skipped and logged. All
+skipped and logged with the command that converts them anyway. If the server
+is stopped meanwhile, it stops after the current repo; the rest are converted
+on the next start. All
 files cached for the kept revision (the last one downloaded, else `main`) are
 moved; repos downloaded by Python's `huggingface_hub` work too. If a repo has
 other revisions or an unfinished download cached, those would be deleted, so
