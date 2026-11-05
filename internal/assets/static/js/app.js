@@ -1631,11 +1631,31 @@
     }
   }
 
+  // Jobs page order: actively downloading first, then completed (most
+  // recently finished first), then the queue in the order it will run, then
+  // everything else (paused, failed, cancelled; newest first).
+  const JOB_GROUP = { running: 0, completed: 1, queued: 2 };
+  function compareJobs(a, b) {
+    const ga = JOB_GROUP[a.status] ?? 3;
+    const gb = JOB_GROUP[b.status] ?? 3;
+    if (ga !== gb) return ga - gb;
+    if (a.status === 'queued') {
+      const qa = a.queueSeq || 0, qb = b.queueSeq || 0;
+      if (qa !== qb) return qa - qb;
+      return Date.parse(a.createdAt) - Date.parse(b.createdAt);
+    }
+    if (a.status === 'completed') {
+      const d = Date.parse(b.endedAt || 0) - Date.parse(a.endedAt || 0);
+      if (d) return d;
+    }
+    return Date.parse(b.createdAt) - Date.parse(a.createdAt);
+  }
+
   function renderJobs() {
     const container = $('#jobsList');
     if (!container) return;
 
-    const jobs = Array.from(state.jobs.values());
+    const jobs = Array.from(state.jobs.values()).sort(compareJobs);
 
     if (jobs.length === 0) {
       container.innerHTML = `
@@ -1661,15 +1681,20 @@
     }
 
     const seen = new Set();
+    let prev = null;
     for (const job of jobs) {
       seen.add(job.id);
       let el = jobCardCache.get(job.id);
       if (!el) {
         el = createJobCard(job);
         jobCardCache.set(job.id, el);
-        container.appendChild(el);
       }
+      // Keep DOM order in sync with the sorted order; only move a card when
+      // it's out of place so steady-state progress updates don't touch layout.
+      const want = prev ? prev.nextSibling : container.firstChild;
+      if (el !== want) container.insertBefore(el, want);
       updateJobCard(el, job);
+      prev = el;
     }
 
     // Remove stale cards for jobs that are no longer tracked (dismiss).

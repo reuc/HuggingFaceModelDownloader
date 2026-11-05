@@ -46,6 +46,9 @@ type Job struct {
 	StartedAt  *time.Time        `json:"startedAt,omitempty"`
 	EndedAt    *time.Time        `json:"endedAt,omitempty"`
 	Files      []JobFileProgress `json:"files,omitempty"`
+	// QueueSeq increases every time the job is (re)queued, so sorting queued
+	// jobs by it gives the order they will be downloaded in.
+	QueueSeq   int64             `json:"queueSeq,omitempty"`
 
 	cancel     context.CancelFunc `json:"-"`
 	generation int                `json:"-"` // Tracks which runJob instance is current
@@ -93,8 +96,9 @@ type JobManager struct {
 	// order; busy is true while a job is executing. Per-model parallelism
 	// (connections-per-file, files-per-model) is unaffected — only the number
 	// of simultaneous *models* is capped at one. Both fields are guarded by mu.
-	queue []string
-	busy  bool
+	queue    []string
+	busy     bool
+	queueSeq int64 // last QueueSeq handed out by enqueueLocked
 
 	// runFn performs a job's download. It defaults to runJob and exists so
 	// tests can substitute a fake runner without touching the network.
@@ -176,6 +180,10 @@ func (m *JobManager) Stop() {
 // enqueueLocked appends a job ID to the run queue. Must hold m.mu (write).
 func (m *JobManager) enqueueLocked(id string) {
 	m.queue = append(m.queue, id)
+	if j, ok := m.jobs[id]; ok {
+		m.queueSeq++
+		j.QueueSeq = m.queueSeq
+	}
 }
 
 // scheduleNextLocked starts the next queued job if no job is currently running.
