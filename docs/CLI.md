@@ -153,7 +153,7 @@ The `download` subcommand is required: `hfdownloader owner/name` fails with
 | `--endpoint` | | string | `https://huggingface.co` | Custom endpoint (mirrors) |
 | `--no-manifest` | | bool | `false` | Don't write hfd.yaml manifest |
 | `--no-friendly` | | bool | `false` | Don't create friendly symlinks |
-| `--flatten` | | bool | `false` (config `flatten`) | When the download completes, move the files into `models/<owner>/<name>` (or `datasets/`) as real files and remove the repo from `hub/`. See [Flattened storage](../README.md#flattened-storage-real-files-in-models-only) |
+| `--flatten` | | bool | `false` (config `flatten`) | When the download completes, move the files into `models/<owner>/<name>` (or `datasets/`) as real files and remove the repo from `hub/`. Not with `--no-manifest` or `--no-friendly`. See [Flattened storage](../README.md#flattened-storage-real-files-in-models-only) |
 | `--dry-run` | | bool | `false` | Plan only, no download |
 | `--plan-format` | | string | `table` | Plan format: table, json (`--json` also prints JSON) |
 

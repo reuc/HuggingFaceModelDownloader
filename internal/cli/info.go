@@ -17,19 +17,21 @@ import (
 
 // RepoInfo represents detailed info about a downloaded repo.
 type RepoInfo struct {
-	Type           string         `json:"type"`
-	Repo           string         `json:"repo"`
-	Branch         string         `json:"branch"`
-	Commit         string         `json:"commit"`
-	TotalFiles     int            `json:"total_files"`
-	TotalSize      int64          `json:"total_size"`
-	TotalSizeHuman string         `json:"total_size_human"`
-	StartedAt      string         `json:"started_at"`
-	CompletedAt    string         `json:"completed_at"`
-	Command        string         `json:"command"`
-	FriendlyPath   string         `json:"friendly_path"`
-	CachePath      string         `json:"cache_path"`
-	Files          []RepoFileInfo `json:"files"`
+	Type           string `json:"type"`
+	Repo           string `json:"repo"`
+	Branch         string `json:"branch"`
+	Commit         string `json:"commit"`
+	TotalFiles     int    `json:"total_files"`
+	TotalSize      int64  `json:"total_size"`
+	TotalSizeHuman string `json:"total_size_human"`
+	StartedAt      string `json:"started_at"`
+	CompletedAt    string `json:"completed_at"`
+	Command        string `json:"command"`
+	FriendlyPath   string `json:"friendly_path"`
+	CachePath      string `json:"cache_path"` // empty for a flat repo
+	// Storage is "flat" for a repo stored as real files with no hub/ entry.
+	Storage string         `json:"storage,omitempty"`
+	Files   []RepoFileInfo `json:"files"`
 }
 
 // RepoFileInfo represents a file in the repo.
@@ -146,18 +148,27 @@ func findRepoInfo(cacheDir, query string) (*RepoInfo, error) {
 	manifestPath := matches[0]
 	friendlyPath := filepath.Dir(manifestPath)
 
-	// Build cache path
-	cachePath := filepath.Join(cacheDir, manifest.RepoPath)
+	// Build cache path. A flat repo (--flatten) has no hub/ entry: its
+	// files are the real ones in the friendly folder.
+	flat := manifest.Storage == hfdownloader.StorageFlat
+	cachePath := ""
+	if !flat {
+		cachePath = filepath.Join(cacheDir, manifest.RepoPath)
+	}
 
 	// Build file list
 	var files []RepoFileInfo
 	for _, f := range manifest.Files {
+		blobPath := filepath.Join(cachePath, f.Blob)
+		if flat {
+			blobPath = filepath.Join(friendlyPath, filepath.FromSlash(f.Name))
+		}
 		files = append(files, RepoFileInfo{
 			Name:      f.Name,
 			Size:      f.Size,
 			SizeHuman: humanSize(f.Size),
 			LFS:       f.LFS,
-			BlobPath:  filepath.Join(cachePath, f.Blob),
+			BlobPath:  blobPath,
 		})
 	}
 
@@ -174,6 +185,7 @@ func findRepoInfo(cacheDir, query string) (*RepoInfo, error) {
 		Command:        manifest.Command,
 		FriendlyPath:   friendlyPath,
 		CachePath:      cachePath,
+		Storage:        manifest.Storage,
 		Files:          files,
 	}, nil
 }
@@ -204,8 +216,12 @@ func printRepoInfo(info *RepoInfo) {
 	fmt.Printf("Size:       %s\n", info.TotalSizeHuman)
 	fmt.Printf("Downloaded: %s\n", info.CompletedAt)
 	fmt.Println()
-	fmt.Printf("Friendly path: %s\n", info.FriendlyPath)
-	fmt.Printf("Cache path:    %s\n", info.CachePath)
+	if info.Storage == hfdownloader.StorageFlat {
+		fmt.Printf("Path:          %s (real files; no hub/ entry)\n", info.FriendlyPath)
+	} else {
+		fmt.Printf("Friendly path: %s\n", info.FriendlyPath)
+		fmt.Printf("Cache path:    %s\n", info.CachePath)
+	}
 
 	if info.Command != "" && info.Command != "(regenerated from cache)" {
 		fmt.Println()

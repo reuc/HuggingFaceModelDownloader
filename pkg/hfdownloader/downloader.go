@@ -213,15 +213,28 @@ func Download(ctx context.Context, job Job, cfg Settings, progress ProgressFunc)
 	if flatten {
 		prevFlat = repoDir.flatManifestFiles()
 	}
-	addFlat := func(rel, sha string, keep bool) {
+	addFlat := func(rel, name, sha string, keep bool) {
 		if flatten {
 			src := ""
 			if validSHA256Hex(sha) {
 				src = repoDir.BlobPath(sha)
 			}
 			flatMu.Lock()
-			flatFiles = append(flatFiles, flatFile{rel: rel, src: src, keep: keep})
+			flatFiles = append(flatFiles, flatFile{rel: rel, name: name, src: src, keep: keep})
 			flatMu.Unlock()
+		}
+	}
+	if flatten {
+		// A repo with its own root hfd.yaml would have it overwritten by the
+		// manifest once flat; refuse before downloading anything.
+		for _, item := range plan.Items {
+			rel := item.RelativePath
+			if job.AppendFilterSubdir && item.Subdir != "" {
+				rel = filepath.ToSlash(filepath.Join(item.Subdir, item.RelativePath))
+			}
+			if rel == ManifestFilename {
+				return fmt.Errorf("%s has its own %s, which would be overwritten by the download manifest; download it without --flatten", job.Repo, ManifestFilename)
+			}
 		}
 	}
 
@@ -313,6 +326,12 @@ LOOP:
 							return true, "blob exists", nil
 						}
 						if status == BlobDownloading {
+							if flatten {
+								// Its blob doesn't exist yet, so it can't be
+								// moved; and the other download still needs
+								// the hub/ entry.
+								return false, "", fmt.Errorf("%s is being downloaded by another process; try again when that download finishes", finalRel)
+							}
 							return true, "downloading by another process", nil
 						}
 					}
@@ -367,7 +386,7 @@ LOOP:
 				if _, loaded := skipOnce.LoadOrStore(finalRel, struct{}{}); !loaded {
 					emit(ProgressEvent{Event: "file_done", Path: finalRel, Message: "skip (" + reason + ")"})
 					atomic.AddInt64(&skippedCount, 1)
-					addFlat(finalRel, reusedSHA, keepFlat)
+					addFlat(finalRel, it.RelativePath, reusedSHA, keepFlat)
 					// Add to manifest (skipped files are still part of the download job)
 					if manifestBuilder != nil {
 						manifestMu.Lock()
@@ -441,7 +460,7 @@ LOOP:
 				if it.GitOID != "" {
 					oidBlobs.Store(it.GitOID, finalSHA256)
 				}
-				addFlat(finalRel, finalSHA256, false)
+				addFlat(finalRel, it.RelativePath, finalSHA256, false)
 			} else {
 				finalSHA256 = it.SHA256
 			}
@@ -512,13 +531,19 @@ LOOP:
 	// failed download keeps its partial data in hub/ and resumes.
 	if flatten {
 		emit(ProgressEvent{Event: "flatten", Message: "moving files to " + repoDir.FriendlyPath()})
-		if err := repoDir.placeFlatFiles(flatFiles); err != nil {
+		mtimes, err := repoDir.placeFlatFiles(flatFiles)
+		if err != nil {
 			err = fmt.Errorf("move files to %s: %w", repoDir.FriendlyPath(), err)
 			emit(ProgressEvent{Level: "error", Event: "error", Message: err.Error()})
 			return err
 		}
 		if manifestBuilder != nil {
 			manifestBuilder.SetFlat()
+			byName := make(map[string]int64, len(flatFiles))
+			for _, f := range flatFiles {
+				byName[f.name] = mtimes[f.rel]
+			}
+			manifestBuilder.SetModTimes(byName)
 		}
 	}
 

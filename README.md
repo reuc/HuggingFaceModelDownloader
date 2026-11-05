@@ -304,7 +304,10 @@ or use **Convert to real files** on a repo in the web UI's Cache browser. All
 files cached for the kept revision (the last one downloaded, else `main`) are
 moved; repos downloaded by Python's `huggingface_hub` work too. If a repo has
 other revisions or an unfinished download cached, those would be deleted, so
-it's skipped unless you pass `--yes` (the web UI asks).
+it's skipped unless you pass `--yes` (the web UI asks). Files are staged
+first and only then moved into place, so a failure (a full disk, say) leaves
+the cache as it was. A repo with its own `hfd.yaml` at the root can't be
+flattened, since the download manifest would overwrite it.
 
 ### Export: plain files from what you already downloaded
 
@@ -573,7 +576,7 @@ docker run --rm -v ~/.cache/huggingface:/home/hfdownloader/.cache/huggingface \
 | `AUTH_PASS` | unset | Basic-auth password for `serve`, and the SSH password |
 | `SSH_ENABLE` | `false` | Start an SSH/SFTP server in the container (`true`/`false`) |
 | `SSH_PORT` | `22` | SSH server port, used only when `SSH_ENABLE=true` |
-| `FLATTEN` | `false` | Store finished downloads only as real files in `models/` / `datasets/` (same as `serve --flatten`) |
+| `FLATTEN` | unset | Store finished downloads only as real files in `models/` / `datasets/` (same as `serve --flatten`). When set to `true` or `false` it overrides `flatten` in the config file |
 
 `AUTH_USER` and `AUTH_PASS` must be set together, and `SSH_ENABLE` requires both.
 Flags passed on the command line override these variables.

@@ -89,6 +89,11 @@ web app on a different origin needs to call the API.`,
 			if _, err := hfdownloader.ParseLinkMode(cfg.LinkMode); err != nil {
 				return err
 			}
+			// An explicit --flatten (including --flatten=false) wins over the
+			// config file, like every other flag.
+			if cmd.Flags().Changed("flatten") {
+				cfg.Flatten = flatten
+			}
 			// --auth-user alone used to enable auth with an empty password, and
 			// --auth-pass alone silently left auth off.
 			if (authUser == "") != (authPass == "") {

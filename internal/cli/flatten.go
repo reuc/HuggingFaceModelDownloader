@@ -88,7 +88,7 @@ Examples:
 						// Fall back to a cached dataset of that name.
 						if _, err := os.Stat(rd.Path()); os.IsNotExist(err) && !rd.IsFlat() {
 							if ds, err := cache.Repo(repo, hfdownloader.RepoTypeDataset); err == nil {
-								if _, err := os.Stat(ds.Path()); err == nil {
+								if _, err := os.Stat(ds.Path()); err == nil || ds.IsFlat() {
 									rd = ds
 								}
 							}

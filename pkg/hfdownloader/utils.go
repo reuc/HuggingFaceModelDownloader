@@ -110,6 +110,12 @@ func validate(job Job, cfg Settings) error {
 	if cfg.Flatten && cfg.NoFriendlyView {
 		return errors.New("flatten stores files in the friendly view; it can't be combined with no-friendly")
 	}
+	if cfg.Flatten && cfg.NoManifest {
+		// The hfd.yaml manifest is what marks the folder as a flat repo (for
+		// the cache browser, list/info and later downloads) and records the
+		// hashes later downloads use to skip unchanged files.
+		return errors.New("flatten needs the hfd.yaml manifest; it can't be combined with no-manifest")
+	}
 	switch cfg.Verify {
 	case "", "none", "size", "etag", "sha256":
 	default:

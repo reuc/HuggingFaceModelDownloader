@@ -16,7 +16,9 @@
 #   SSH_PORT   Port for the SSH server when SSH_ENABLE is true. Default 22.
 #   FLATTEN    When a download completes, move its files into models/ (or
 #              datasets/) as real files and remove it from hub/ (same as
-#              `serve --flatten`). Boolean like SSH_ENABLE. Default false.
+#              `serve --flatten`). Boolean like SSH_ENABLE. When set (true or
+#              false) it overrides `flatten` in the config file; unset leaves
+#              the config file's value (default false).
 #
 # Flags passed explicitly on the command line always win over these variables.
 # =============================================================================
@@ -40,7 +42,7 @@ AUTH_PASS="${AUTH_PASS:-}"
 HTTP_PORT="${HTTP_PORT:-}"
 SSH_PORT="${SSH_PORT:-}"
 SSH_ENABLE="${SSH_ENABLE:-false}"
-FLATTEN="${FLATTEN:-false}"
+FLATTEN="${FLATTEN:-}"
 
 # parse_bool <NAME> <value>: prints true or false, or dies.
 parse_bool() {
@@ -51,7 +53,7 @@ parse_bool() {
 	esac
 }
 SSH_ENABLE=$(parse_bool SSH_ENABLE "$SSH_ENABLE")
-FLATTEN=$(parse_bool FLATTEN "$FLATTEN")
+[ -n "$FLATTEN" ] && FLATTEN=$(parse_bool FLATTEN "$FLATTEN")
 
 if [ -n "$AUTH_USER" ] && [ -z "$AUTH_PASS" ]; then die "AUTH_USER is set but AUTH_PASS is empty"; fi
 if [ -z "$AUTH_USER" ] && [ -n "$AUTH_PASS" ]; then die "AUTH_PASS is set but AUTH_USER is empty"; fi
@@ -143,8 +145,8 @@ if [ "${1:-}" = serve ]; then
 	if [ -n "$AUTH_USER" ] && ! has_flag --auth-user "" -- "$@" && ! has_flag --auth-pass "" -- "$@"; then
 		set -- --auth-user "$AUTH_USER" --auth-pass "$AUTH_PASS" "$@"
 	fi
-	if [ "$FLATTEN" = true ] && ! has_flag --flatten "" -- "$@"; then
-		set -- --flatten "$@"
+	if [ -n "$FLATTEN" ] && ! has_flag --flatten "" -- "$@"; then
+		set -- "--flatten=$FLATTEN" "$@"
 	fi
 	set -- serve "$@"
 fi

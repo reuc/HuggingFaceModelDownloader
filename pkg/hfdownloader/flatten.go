@@ -25,6 +25,8 @@ type flatFile struct {
 	// rel is the file's path inside the friendly view (repo path, plus the
 	// filter subdirectory when AppendFilterSubdir is set).
 	rel string
+	// name is the file's repo path, its name in hfd.yaml.
+	name string
 	// src is the file holding its data inside the repo's hub/ entry: a blob,
 	// or a snapshot file when snapshots are hardlinks or copies.
 	src string
@@ -59,9 +61,14 @@ func (r *RepoDir) flatManifestFiles() map[string]ManifestFile {
 
 // flatFileCurrent reports whether the friendly view already holds the data
 // for a planned file as a real file, so a flat repo can be updated without
-// downloading unchanged files again. LFS files are matched by size and the
-// content hash recorded in the previous manifest, other files by size and git
-// blob id. It returns the file's content hash when it matches.
+// downloading unchanged files again. It returns the file's content hash when
+// it matches.
+//
+// LFS files must have the planned size and content hash. Hashing every large
+// file on every update would be slow, so a file whose size, hash and
+// modification time all match what the previous flat manifest recorded is
+// trusted; one modified since (edited in place, say) is hashed. Other files
+// are matched by size and git blob id, which reads them.
 func (r *RepoDir) flatFileCurrent(rel string, it PlanItem, prev map[string]ManifestFile) (string, bool) {
 	if unsafeRepoPath(rel) {
 		return "", false
@@ -72,12 +79,20 @@ func (r *RepoDir) flatFileCurrent(rel string, it PlanItem, prev map[string]Manif
 		return "", false
 	}
 	recorded := ""
+	var recordedMtime int64
 	if f, ok := prev[it.RelativePath]; ok && f.Size == it.Size {
 		recorded = strings.TrimPrefix(f.Blob, "blobs/")
+		recordedMtime = f.ModTime
 	}
 	if it.SHA256 != "" {
-		if recorded == it.SHA256 {
+		if recorded != it.SHA256 {
+			return "", false
+		}
+		if recordedMtime != 0 && fi.ModTime().UnixNano() == recordedMtime {
 			return recorded, true
+		}
+		if sha, err := computeSHA256(p); err == nil && sha == it.SHA256 {
+			return sha, true
 		}
 		return "", false
 	}
@@ -92,59 +107,107 @@ func (r *RepoDir) flatFileCurrent(rel string, it PlanItem, prev map[string]Manif
 	return "", false
 }
 
-// placeFlatFiles moves each file's data from the hub/ entry to its place in
-// the friendly view, replacing the link that was there. A blob used by
-// several files is copied for all but the last of them. Nothing is deleted
-// from the friendly view, and the hub/ entry is left for removeHubEntry.
-func (r *RepoDir) placeFlatFiles(files []flatFile) error {
-	uses := make(map[string]int)
-	for _, f := range files {
-		if !f.keep {
-			uses[f.src]++
+// flatStageSuffix names the files placeFlatFiles stages next to their
+// destinations before renaming them into place.
+const flatStageSuffix = ".hfd-flatten"
+
+// placeFlatFiles puts each file's data from the repo's hub/ entry at its
+// place in the friendly view as a real file, replacing the link that was
+// there, and returns each placed file's modification time by friendly path.
+//
+// It is all-or-nothing up to the final renames: every file is first staged
+// next to its destination, as a hardlink to its data (no extra disk space) or,
+// where hardlinks aren't possible, a copy. Nothing in hub/ or the friendly
+// view changes until all of them are staged, so a failure (disk full while
+// copying, say) leaves the cache as it was. Then each staged file is renamed
+// over its destination. The data stays in hub/ until removeHubEntry, so even
+// a failed rename can be retried.
+func (r *RepoDir) placeFlatFiles(files []flatFile) (map[string]int64, error) {
+	base := r.FriendlyPath()
+	type stagedFile struct{ tmp, dst, rel string }
+	var staged []stagedFile
+	unstage := func() {
+		for _, s := range staged {
+			_ = os.Remove(s.tmp)
 		}
 	}
-	base := r.FriendlyPath()
+	mtimes := make(map[string]int64)
+
 	for _, f := range files {
-		if f.keep {
-			continue
-		}
 		if unsafeRepoPath(f.rel) {
-			return fmt.Errorf("unsafe path %q", f.rel)
-		}
-		if f.src == "" || !within(f.src, r.Path()) {
-			return fmt.Errorf("%s: data is not in %s", f.rel, r.Path())
+			unstage()
+			return nil, fmt.Errorf("unsafe path %q", f.rel)
 		}
 		dst := filepath.Join(base, filepath.FromSlash(f.rel))
-		if fi, err := os.Lstat(dst); err == nil && fi.IsDir() {
-			return fmt.Errorf("%s: a directory is in the way", f.rel)
-		}
-		blob := f.src
-		if fi, err := os.Lstat(blob); err != nil {
-			return fmt.Errorf("%s: data missing: %w", f.rel, err)
-		} else if !fi.Mode().IsRegular() {
-			return fmt.Errorf("%s: %s is not a regular file", f.rel, blob)
-		}
-		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-			return err
-		}
-		uses[f.src]--
-		if uses[f.src] > 0 {
-			// Another file still needs this blob: copy, don't move.
-			if err := CopyFileStream(blob, dst); err != nil {
-				return fmt.Errorf("%s: %w", f.rel, err)
+		if f.keep {
+			if fi, err := os.Lstat(dst); err == nil {
+				mtimes[f.rel] = fi.ModTime().UnixNano()
 			}
 			continue
 		}
-		// Rename replaces the symlink or hardlink at dst in one step. If the
-		// friendly view is on another filesystem, copy instead.
-		if err := os.Rename(blob, dst); err != nil {
-			if err := CopyFileStream(blob, dst); err != nil {
-				return fmt.Errorf("%s: %w", f.rel, err)
+		if f.src == "" || !within(f.src, r.Path()) {
+			unstage()
+			return nil, fmt.Errorf("%s: data is not in %s", f.rel, r.Path())
+		}
+		srcInfo, err := os.Lstat(f.src)
+		if err != nil {
+			unstage()
+			return nil, fmt.Errorf("%s: data missing: %w", f.rel, err)
+		}
+		if !srcInfo.Mode().IsRegular() {
+			unstage()
+			return nil, fmt.Errorf("%s: %s is not a regular file", f.rel, f.src)
+		}
+		dstInfo, err := os.Lstat(dst)
+		if err == nil && dstInfo.IsDir() {
+			unstage()
+			return nil, fmt.Errorf("%s: a directory is in the way", f.rel)
+		}
+		if err == nil && dstInfo.Mode().IsRegular() && os.SameFile(srcInfo, dstInfo) {
+			// Already the same file (hardlink mode): nothing to move.
+			mtimes[f.rel] = dstInfo.ModTime().UnixNano()
+			continue
+		}
+		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+			unstage()
+			return nil, fmt.Errorf("%s: %w", f.rel, err)
+		}
+		tmp := dst + flatStageSuffix
+		_ = os.Remove(tmp) // left by an interrupted run
+		if err := os.Link(f.src, tmp); err != nil {
+			if err := CopyFileStream(f.src, tmp); err != nil {
+				_ = os.Remove(tmp)
+				unstage()
+				return nil, fmt.Errorf("%s: %w", f.rel, err)
 			}
-			_ = os.Remove(blob)
+		}
+		staged = append(staged, stagedFile{tmp: tmp, dst: dst, rel: f.rel})
+	}
+
+	for i, s := range staged {
+		if err := os.Rename(s.tmp, s.dst); err != nil {
+			for _, rest := range staged[i:] {
+				_ = os.Remove(rest.tmp)
+			}
+			return nil, fmt.Errorf("%s: %w", s.rel, err)
+		}
+		if fi, err := os.Lstat(s.dst); err == nil {
+			mtimes[s.rel] = fi.ModTime().UnixNano()
 		}
 	}
-	return nil
+	return mtimes, nil
+}
+
+// manifestConflict reports whether a file would land on the download
+// manifest's own path (a repo with an hfd.yaml at its root): flattening
+// would overwrite it with the manifest.
+func manifestConflict(files []flatFile) bool {
+	for _, f := range files {
+		if f.rel == ManifestFilename {
+			return true
+		}
+	}
+	return false
 }
 
 // removeHubEntry deletes the repo's hub/ directory once its files have been
@@ -442,13 +505,20 @@ func (r *RepoDir) Flatten(opts FlattenOptions) (*FlattenResult, error) {
 		if f, ok := known[e.rel]; ok {
 			lfs = f.LFS
 		}
-		files = append(files, flatFile{rel: e.rel, src: src})
+		files = append(files, flatFile{rel: e.rel, name: e.rel, src: src})
 		mfiles = append(mfiles, ManifestFile{Name: e.rel, Blob: "blobs/" + sha, Size: info.Size(), LFS: lfs})
 		total += info.Size()
 	}
+	if manifestConflict(files) {
+		return nil, fmt.Errorf("%s has its own %s, which would be overwritten by the download manifest; it can't be flattened", r.RepoID(), ManifestFilename)
+	}
 
-	if err := r.placeFlatFiles(files); err != nil {
-		return nil, fmt.Errorf("move files to %s: %w", r.FriendlyPath(), err)
+	mtimes, err := r.placeFlatFiles(files)
+	if err != nil {
+		return nil, fmt.Errorf("move files to %s (hub/ entry kept): %w", r.FriendlyPath(), err)
+	}
+	for i := range mfiles {
+		mfiles[i].ModTime = mtimes[mfiles[i].Name]
 	}
 
 	m := &DownloadManifest{Version: "1.0", Type: string(r.repoType), Repo: r.RepoID(), Branch: "main", CompletedAt: time.Now().UTC()}

@@ -6,7 +6,11 @@ package hfdownloader
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -313,5 +317,189 @@ func TestFlatten_PartialDownload(t *testing.T) {
 	}
 	if _, err := rd.Flatten(FlattenOptions{DropOtherRevisions: true}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// makeSnapshot writes an HF cache entry for o/r at commit with the given
+// files (each its own blob, linked from the snapshot) and refs/main.
+func makeSnapshot(t *testing.T, rd *RepoDir, commit string, files map[string]string) {
+	t.Helper()
+	i := 0
+	for name, data := range files {
+		i++
+		sha := fmt.Sprintf("%064x", i)
+		os.MkdirAll(rd.BlobsDir(), 0o755)
+		os.WriteFile(rd.BlobPath(sha), []byte(data), 0o644)
+		link := filepath.Join(rd.SnapshotDir(commit), filepath.FromSlash(name))
+		os.MkdirAll(filepath.Dir(link), 0o755)
+		target, _ := filepath.Rel(filepath.Dir(link), rd.BlobPath(sha))
+		if err := os.Symlink(target, link); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rd.WriteRef("main", commit)
+}
+
+// Copilot review: a blob another process is still downloading has no data
+// to move yet, and that download still needs hub/. A --flatten download must
+// fail instead of treating it as done.
+func TestDownload_FlattenRefusesBlobDownloadingElsewhere(t *testing.T) {
+	weights := testPayload(300000)
+	hub := &fakeHub{
+		commit:        "1111111111111111111111111111111111111111",
+		files:         map[string][]byte{"model.safetensors": weights},
+		treeAcceptSHA: true,
+		fileAcceptSHA: true,
+	}
+	srv := httptest.NewServer(hub)
+	defer srv.Close()
+	root := t.TempDir()
+	rd, _ := NewHFCache(root, 0).Repo("o/r", RepoTypeModel)
+	sum := sha256.Sum256(weights)
+	sha := hex.EncodeToString(sum[:])
+	os.MkdirAll(rd.BlobsDir(), 0o755)
+	os.WriteFile(rd.IncompletePath(sha), []byte("partial"), 0o644)
+	meta, _ := json.Marshal(IncompleteMeta{PID: os.Getpid(), StartedAt: time.Now(), SHA256: sha})
+	os.WriteFile(rd.IncompleteMetaPath(sha), meta, 0o644)
+
+	cfg := Settings{Endpoint: srv.URL, CacheDir: root, Retries: 1, Flatten: true}
+	err := Download(context.Background(), Job{Repo: "o/r"}, cfg, nil)
+	if err == nil || !strings.Contains(err.Error(), "another process") {
+		t.Fatalf("Download: %v, want an error about the other download", err)
+	}
+	if _, err := os.Stat(rd.IncompletePath(sha)); err != nil {
+		t.Fatal("the other download's data was removed")
+	}
+}
+
+// Copilot review: a failure while placing files must leave the cache as it
+// was, so a retry can still find every file.
+func TestFlatten_FailureLeavesCacheIntact(t *testing.T) {
+	root := t.TempDir()
+	rd, _ := NewHFCache(root, 0).Repo("o/r", RepoTypeModel)
+	commit := strings.Repeat("5", 40)
+	makeSnapshot(t, rd, commit, map[string]string{"a.txt": "A", "sub/b.txt": "B"})
+	// A file where the folder sub/ must go: a.txt stages fine, sub/b.txt fails.
+	os.MkdirAll(rd.FriendlyPath(), 0o755)
+	obstacle := filepath.Join(rd.FriendlyPath(), "sub")
+	os.WriteFile(obstacle, []byte("x"), 0o644)
+
+	if _, err := rd.Flatten(FlattenOptions{}); err == nil {
+		t.Fatal("Flatten: want an error")
+	}
+	for _, name := range []string{"a.txt", "sub/b.txt"} {
+		got, err := os.ReadFile(rd.SnapshotPath(commit, name))
+		if err != nil || len(got) != 1 {
+			t.Fatalf("after failed Flatten, snapshot %s: %q, %v", name, got, err)
+		}
+	}
+	if _, err := os.Lstat(filepath.Join(rd.FriendlyPath(), "a.txt")); !os.IsNotExist(err) {
+		t.Errorf("a.txt placed although Flatten failed (err=%v)", err)
+	}
+	if left, _ := filepath.Glob(filepath.Join(rd.FriendlyPath(), "*"+flatStageSuffix)); len(left) > 0 {
+		t.Errorf("staged files left behind: %v", left)
+	}
+
+	os.Remove(obstacle)
+	if _, err := rd.Flatten(FlattenOptions{}); err != nil {
+		t.Fatalf("retry: %v", err)
+	}
+	if got, _ := os.ReadFile(filepath.Join(rd.FriendlyPath(), "sub", "b.txt")); string(got) != "B" {
+		t.Errorf("sub/b.txt = %q", got)
+	}
+}
+
+// Copilot review: a repo with its own root hfd.yaml would lose it to the
+// manifest when flat, so both ways of flattening refuse it untouched. The
+// normal layout keeps it in the cache instead of writing the manifest
+// through the friendly link into the cached file.
+func TestFlatten_RepoWithOwnManifestFile(t *testing.T) {
+	root := t.TempDir()
+	rd, _ := NewHFCache(root, 0).Repo("o/r", RepoTypeModel)
+	commit := strings.Repeat("6", 40)
+	makeSnapshot(t, rd, commit, map[string]string{ManifestFilename: "repo data", "a.txt": "A"})
+	if _, err := rd.Flatten(FlattenOptions{}); err == nil || !strings.Contains(err.Error(), ManifestFilename) {
+		t.Fatalf("Flatten: %v, want an hfd.yaml conflict", err)
+	}
+	if _, err := os.Stat(rd.Path()); err != nil {
+		t.Fatal("refused Flatten changed the cache")
+	}
+
+	hub := &fakeHub{
+		commit:        "1111111111111111111111111111111111111111",
+		small:         map[string][]byte{ManifestFilename: []byte("repo data"), "a.txt": []byte("A")},
+		treeAcceptSHA: true,
+		fileAcceptSHA: true,
+	}
+	srv := httptest.NewServer(hub)
+	defer srv.Close()
+	root2 := t.TempDir()
+	cfg := Settings{Endpoint: srv.URL, CacheDir: root2, Retries: 1, Flatten: true}
+	if err := Download(context.Background(), Job{Repo: "o/r"}, cfg, nil); err == nil || !strings.Contains(err.Error(), ManifestFilename) {
+		t.Fatalf("--flatten Download: %v, want an hfd.yaml conflict", err)
+	}
+	if hub.gets("/raw/") != 0 {
+		t.Errorf("downloaded files before refusing")
+	}
+
+	cfg.Flatten = false
+	if err := Download(context.Background(), Job{Repo: "o/r"}, cfg, nil); err != nil {
+		t.Fatal(err)
+	}
+	rd2, _ := NewHFCache(root2, 0).Repo("o/r", RepoTypeModel)
+	if got, _ := os.ReadFile(rd2.SnapshotPath(hub.commit, ManifestFilename)); string(got) != "repo data" {
+		t.Errorf("cached hfd.yaml = %q: the manifest was written into the cache", got)
+	}
+}
+
+// Copilot review: a flat file edited in place (same size) must be restored
+// by the next --flatten download; only touching it must not re-download.
+func TestDownload_FlattenRestoresEditedFile(t *testing.T) {
+	weights := testPayload(300000)
+	hub := &fakeHub{
+		commit:        "1111111111111111111111111111111111111111",
+		files:         map[string][]byte{"model.safetensors": weights},
+		treeAcceptSHA: true,
+		fileAcceptSHA: true,
+	}
+	srv := httptest.NewServer(hub)
+	defer srv.Close()
+	root := t.TempDir()
+	cfg := Settings{Endpoint: srv.URL, CacheDir: root, Retries: 1, Flatten: true}
+	download := func() {
+		t.Helper()
+		if err := Download(context.Background(), Job{Repo: "o/r"}, cfg, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	download()
+	p := filepath.Join(root, "models", "o", "r", "model.safetensors")
+	gets := hub.gets("/model.safetensors")
+
+	// Touched, same content: hashed once, not downloaded.
+	later := time.Now().Add(time.Minute)
+	os.Chtimes(p, later, later)
+	download()
+	if hub.gets("/model.safetensors") != gets {
+		t.Fatal("touched but unchanged file was downloaded again")
+	}
+
+	// Edited in place, same size: downloaded again and restored.
+	edited := append([]byte(nil), weights...)
+	edited[0] ^= 0xff
+	os.WriteFile(p, edited, 0o644)
+	download()
+	if hub.gets("/model.safetensors") == gets {
+		t.Fatal("edited file was not downloaded again")
+	}
+	if got, _ := os.ReadFile(p); !bytes.Equal(got, weights) {
+		t.Fatal("edited file not restored")
+	}
+}
+
+func TestValidate_FlattenNeedsManifest(t *testing.T) {
+	err := Download(context.Background(), Job{Repo: "o/r"}, Settings{Flatten: true, NoManifest: true}, nil)
+	if err == nil || !strings.Contains(err.Error(), "manifest") {
+		t.Fatalf("Flatten with NoManifest: %v, want an error", err)
 	}
 }

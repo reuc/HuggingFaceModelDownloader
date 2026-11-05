@@ -315,8 +315,11 @@ func humanSize(bytes int64) string {
 		KB = 1000
 		MB = KB * 1000
 		GB = MB * 1000
+		TB = GB * 1000
 	)
 	switch {
+	case bytes >= TB:
+		return fmt.Sprintf("%.1f TB", float64(bytes)/TB)
 	case bytes >= GB:
 		return fmt.Sprintf("%.1f GB", float64(bytes)/GB)
 	case bytes >= MB:
