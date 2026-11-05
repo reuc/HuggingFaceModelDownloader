@@ -85,11 +85,17 @@ func writeJobsFile(path string, state *jobsState) error {
 // to disk, then renamed over path (os.Rename replaces an existing file on all
 // platforms, including Windows). Finally the directory is synced so the rename
 // itself survives a crash; that step is best effort because Windows can't
-// fsync a directory.
+// fsync a directory. Each call uses its own temp file, so two writers (e.g.
+// two server processes sharing a config dir) can't rename each other's.
 func writeFileDurable(path string, data []byte, perm os.FileMode) error {
-	tmp := path + ".tmp"
-	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
+	f, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.tmp")
 	if err != nil {
+		return err
+	}
+	tmp := f.Name()
+	if err := f.Chmod(perm); err != nil {
+		f.Close()
+		os.Remove(tmp)
 		return err
 	}
 	if _, err := f.Write(data); err != nil {
