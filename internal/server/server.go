@@ -53,6 +53,10 @@ type Config struct {
 	// under arbitrary directories.
 	MirrorDir string
 	Endpoint  string // Custom HuggingFace endpoint (e.g., for mirrors)
+	// JobsFile is where the download queue and job history are saved so they
+	// survive a restart; queued and interrupted jobs resume on startup.
+	// Empty disables persistence (serve defaults it to DefaultJobsFile).
+	JobsFile string
 
 	// Authentication
 	AuthUser string // Basic auth username (empty = no auth)
@@ -135,6 +139,9 @@ func (s *Server) settingsConfig() Config {
 func (s *Server) ListenAndServe(ctx context.Context) error {
 	// Start WebSocket hub
 	go s.wsHub.Run()
+
+	// Resume downloads restored from the saved job list.
+	s.jobs.Start()
 
 	handler := s.handler()
 	addr := fmt.Sprintf("%s:%d", s.config.Addr, s.config.Port)

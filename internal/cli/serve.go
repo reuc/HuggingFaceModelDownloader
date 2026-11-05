@@ -37,6 +37,7 @@ func newServeCmd(ro *RootOpts) *cobra.Command {
 		linkMode           string
 		exportDir          string
 		mirrorDir          string
+		jobsFile           string
 	)
 
 	cmd := &cobra.Command{
@@ -122,6 +123,17 @@ web app on a different origin needs to call the API.`,
 				cfg.Endpoint = endpoint
 			}
 
+			// Job list persistence: defaults to the config dir; "off"
+			// disables it.
+			switch jobsFile {
+			case "off":
+				cfg.JobsFile = ""
+			case "":
+				cfg.JobsFile = server.DefaultJobsFile()
+			default:
+				cfg.JobsFile = jobsFile
+			}
+
 			// Get token from flag, env, or config (in that order)
 			token := strings.TrimSpace(ro.Token)
 			if token == "" {
@@ -169,6 +181,7 @@ web app on a different origin needs to call the API.`,
 	// Storage
 	cmd.Flags().StringVar(&linkMode, "link-mode", "", "How cache entries refer to downloaded data: auto (symlink, else hardlink, else copy), symlink, hardlink, copy")
 	cmd.Flags().StringVar(&exportDir, "export-dir", "", "Enable \"Export as real files\" in the web UI, writing to <export-dir>/<owner>/<name>")
+	cmd.Flags().StringVar(&jobsFile, "jobs-file", "", "Where to save the download queue so it resumes after a restart (default: ~/.config/hfdownloader/jobs.json; \"off\" disables)")
 	cmd.Flags().StringVar(&mirrorDir, "mirror-dir", "", "Allow the web UI to add mirror targets, but only inside this directory (targets added with `mirror target add` work regardless)")
 
 	// Cross-origin access

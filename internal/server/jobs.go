@@ -8,6 +8,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 	"time"
@@ -98,6 +99,12 @@ type JobManager struct {
 	// runFn performs a job's download. It defaults to runJob and exists so
 	// tests can substitute a fake runner without touching the network.
 	runFn func(*Job)
+
+	// jobsFile is where the job list is saved on every status change so
+	// queued/running downloads survive a restart (see jobstore.go). Empty
+	// disables persistence. saveMu serializes writes to it.
+	jobsFile string
+	saveMu   sync.Mutex
 }
 
 // wsBroadcastMinGap is the minimum interval between consecutive WebSocket
@@ -110,11 +117,15 @@ const wsBroadcastMinGap = 250 * time.Millisecond
 // NewJobManager creates a new job manager.
 func NewJobManager(cfg Config, wsHub *WSHub) *JobManager {
 	m := &JobManager{
-		jobs:   make(map[string]*Job),
-		config: cfg,
-		wsHub:  wsHub,
+		jobs:     make(map[string]*Job),
+		config:   cfg,
+		wsHub:    wsHub,
+		jobsFile: cfg.JobsFile,
 	}
 	m.runFn = m.runJob
+	if err := m.loadJobs(); err != nil {
+		log.Printf("warning: could not restore jobs from %s: %v", m.jobsFile, err)
+	}
 	if wsHub != nil {
 		m.wsCoalescer = newJobCoalescer(wsBroadcastMinGap, func(j *Job) {
 			wsHub.BroadcastJob(j)
@@ -304,6 +315,7 @@ func (m *JobManager) CreateJob(req DownloadRequest) (*Job, bool, error) {
 	m.scheduleNextLocked()
 	snapshot := m.cloneJobLocked(job)
 	m.mu.Unlock()
+	m.saveJobs()
 
 	return snapshot, false, nil
 }
@@ -357,6 +369,7 @@ func (m *JobManager) CancelJob(id string) bool {
 	job.EndedAt = &now
 	snapshot := m.cloneJobLocked(job)
 	m.mu.Unlock()
+	m.saveJobs()
 
 	m.notifyListeners(snapshot)
 	return true
@@ -382,6 +395,7 @@ func (m *JobManager) PauseJob(id string) bool {
 	job.Status = JobStatusPaused
 	snapshot := m.cloneJobLocked(job)
 	m.mu.Unlock()
+	m.saveJobs()
 
 	m.notifyListeners(snapshot)
 	return true
@@ -412,6 +426,7 @@ func (m *JobManager) ResumeJob(id string) bool {
 	m.scheduleNextLocked()
 	snapshot := m.cloneJobLocked(job)
 	m.mu.Unlock()
+	m.saveJobs()
 
 	// Notify listeners of status change
 	m.notifyListeners(snapshot)
@@ -422,10 +437,9 @@ func (m *JobManager) ResumeJob(id string) bool {
 // DeleteJob removes a job from the list.
 func (m *JobManager) DeleteJob(id string) bool {
 	m.mu.Lock()
-	defer m.mu.Unlock()
-
 	job, ok := m.jobs[id]
 	if !ok {
+		m.mu.Unlock()
 		return false
 	}
 
@@ -435,6 +449,8 @@ func (m *JobManager) DeleteJob(id string) bool {
 	}
 
 	delete(m.jobs, id)
+	m.mu.Unlock()
+	m.saveJobs()
 	return true
 }
 
@@ -487,15 +503,18 @@ func (m *JobManager) DismissJob(id string) bool {
 // reason a dismissal failed, for use by the HTTP handler.
 func (m *JobManager) DismissJobResult(id string) (DismissJobResult, *Job) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	job, ok := m.jobs[id]
 	if !ok {
+		m.mu.Unlock()
 		return DismissJobNotFound, nil
 	}
 	if !isTerminalJobStatus(job.Status) {
+		m.mu.Unlock()
 		return DismissJobStillActive, job
 	}
 	delete(m.jobs, id)
+	m.mu.Unlock()
+	m.saveJobs()
 	return DismissJobOK, job
 }
 
@@ -567,6 +586,7 @@ func (m *JobManager) runJob(job *Job) {
 	job.StartedAt = &now
 	startSnap := m.cloneJobLocked(job)
 	m.mu.Unlock()
+	m.saveJobs()
 	m.notifyListeners(startSnap)
 
 	// Create hfdownloader job and settings
@@ -755,6 +775,7 @@ func (m *JobManager) runJob(job *Job) {
 	}
 	endSnap := m.cloneJobLocked(job)
 	m.mu.Unlock()
+	m.saveJobs()
 
 	m.notifyListeners(endSnap)
 }
