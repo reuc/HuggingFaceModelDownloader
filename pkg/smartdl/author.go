@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/bodaay/HuggingFaceModelDownloader/internal/hubtree"
+	"github.com/reuc/HuggingFaceModelDownloader/internal/hubtree"
 )
 
 // MaxAuthorRepos caps how many models and how many datasets ListAuthor

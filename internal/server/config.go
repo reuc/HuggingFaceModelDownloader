@@ -11,7 +11,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/bodaay/HuggingFaceModelDownloader/pkg/hfdownloader"
+	"github.com/reuc/HuggingFaceModelDownloader/pkg/hfdownloader"
 	"gopkg.in/yaml.v3"
 )
 

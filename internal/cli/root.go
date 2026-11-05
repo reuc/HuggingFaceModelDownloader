@@ -19,9 +19,9 @@ import (
 	"golang.org/x/term"
 	"gopkg.in/yaml.v3"
 
-	"github.com/bodaay/HuggingFaceModelDownloader/internal/server"
-	"github.com/bodaay/HuggingFaceModelDownloader/internal/tui"
-	"github.com/bodaay/HuggingFaceModelDownloader/pkg/hfdownloader"
+	"github.com/reuc/HuggingFaceModelDownloader/internal/server"
+	"github.com/reuc/HuggingFaceModelDownloader/internal/tui"
+	"github.com/reuc/HuggingFaceModelDownloader/pkg/hfdownloader"
 )
 
 // RootOpts holds global CLI options.

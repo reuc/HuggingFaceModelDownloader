@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/bodaay/HuggingFaceModelDownloader/pkg/hfdownloader"
+	"github.com/reuc/HuggingFaceModelDownloader/pkg/hfdownloader"
 )
 
 // writeFlatRepo creates a flat (--flatten) repo: real files plus a

@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/bodaay/HuggingFaceModelDownloader/pkg/hfdownloader"
+	"github.com/reuc/HuggingFaceModelDownloader/pkg/hfdownloader"
 )
 
 func TestRootOpts(t *testing.T) {

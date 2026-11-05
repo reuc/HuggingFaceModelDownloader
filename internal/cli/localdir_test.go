@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/bodaay/HuggingFaceModelDownloader/pkg/hfdownloader"
+	"github.com/reuc/HuggingFaceModelDownloader/pkg/hfdownloader"
 )
 
 // TestFinalize_LocalDirSetsOutputAndClearsCache verifies that --local-dir

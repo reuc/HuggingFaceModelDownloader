@@ -10,7 +10,7 @@ import (
 	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/bodaay/HuggingFaceModelDownloader/pkg/smartdl"
+	"github.com/reuc/HuggingFaceModelDownloader/pkg/smartdl"
 )
 
 // SelectorResult contains the result of the interactive selection.

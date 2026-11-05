@@ -8,7 +8,7 @@ import (
 	"errors"
 	"log"
 
-	"github.com/bodaay/HuggingFaceModelDownloader/pkg/hfdownloader"
+	"github.com/reuc/HuggingFaceModelDownloader/pkg/hfdownloader"
 )
 
 // convertSummary counts what convertOnBoot did with the repos in hub/.

@@ -2,7 +2,7 @@
 
 # HuggingFace Downloader
 
-Fork of another
+Fork of [bodaay/HuggingFaceModelDownloader](https://github.com/bodaay/HuggingFaceModelDownloader).
 
 **Parallel downloads** • **Smart GGUF analyzer** • **Python compatible** • **Full proxy support**
 
@@ -78,22 +78,22 @@ hfdownloader download meta-llama/Llama-2-7b --proxy socks5://localhost:1080
 
 ```bash
 # Analyze a model with interactive GGUF picker
-bash <(curl -sSL https://g.bodaay.io/hfd) analyze -i TheBloke/Mistral-7B-Instruct-v0.2-GGUF
+bash <(curl -sSL https://raw.githubusercontent.com/reuc/HuggingFaceModelDownloader/main/scripts/gist_gethfd.sh) analyze -i TheBloke/Mistral-7B-Instruct-v0.2-GGUF
 
 # Download a model
-bash <(curl -sSL https://g.bodaay.io/hfd) download TheBloke/Mistral-7B-Instruct-v0.2-GGUF
+bash <(curl -sSL https://raw.githubusercontent.com/reuc/HuggingFaceModelDownloader/main/scripts/gist_gethfd.sh) download TheBloke/Mistral-7B-Instruct-v0.2-GGUF
 
 # Start web UI
-bash <(curl -sSL https://g.bodaay.io/hfd) serve
+bash <(curl -sSL https://raw.githubusercontent.com/reuc/HuggingFaceModelDownloader/main/scripts/gist_gethfd.sh) serve
 
 # Start web UI with authentication
-bash <(curl -sSL https://g.bodaay.io/hfd) serve --auth-user admin --auth-pass secret
+bash <(curl -sSL https://raw.githubusercontent.com/reuc/HuggingFaceModelDownloader/main/scripts/gist_gethfd.sh) serve --auth-user admin --auth-pass secret
 ```
 
 **Like it? Install permanently (no sudo):**
 
 ```bash
-bash <(curl -sSL https://g.bodaay.io/hfd) install
+bash <(curl -sSL https://raw.githubusercontent.com/reuc/HuggingFaceModelDownloader/main/scripts/gist_gethfd.sh) install
 ```
 
 By default this installs to `~/.local/bin` (or `~/bin` if that's already on
@@ -101,7 +101,7 @@ your PATH) so no sudo prompt is needed. Pass an explicit path to override:
 
 ```bash
 # System-wide install (may prompt for sudo)
-bash <(curl -sSL https://g.bodaay.io/hfd) install /usr/local/bin
+bash <(curl -sSL https://raw.githubusercontent.com/reuc/HuggingFaceModelDownloader/main/scripts/gist_gethfd.sh) install /usr/local/bin
 ```
 
 Now use directly:
@@ -522,27 +522,27 @@ proxy:
 ### One-Liner (Recommended)
 
 ```bash
-bash <(curl -sSL https://g.bodaay.io/hfd) install
+bash <(curl -sSL https://raw.githubusercontent.com/reuc/HuggingFaceModelDownloader/main/scripts/gist_gethfd.sh) install
 ```
 
 That's it. Works on Linux, macOS, and WSL. Installs to `~/.local/bin` by
 default — no sudo required. Pass an explicit path to install somewhere else:
 
 ```bash
-bash <(curl -sSL https://g.bodaay.io/hfd) install /usr/local/bin   # system-wide
-bash <(curl -sSL https://g.bodaay.io/hfd) install ~/bin            # custom
+bash <(curl -sSL https://raw.githubusercontent.com/reuc/HuggingFaceModelDownloader/main/scripts/gist_gethfd.sh) install /usr/local/bin   # system-wide
+bash <(curl -sSL https://raw.githubusercontent.com/reuc/HuggingFaceModelDownloader/main/scripts/gist_gethfd.sh) install ~/bin            # custom
 ```
 
 **Or run without installing:**
 
 ```bash
-bash <(curl -sSL https://g.bodaay.io/hfd) download TheBloke/Mistral-7B-Instruct-v0.2-GGUF
-bash <(curl -sSL https://g.bodaay.io/hfd) serve   # Web UI
+bash <(curl -sSL https://raw.githubusercontent.com/reuc/HuggingFaceModelDownloader/main/scripts/gist_gethfd.sh) download TheBloke/Mistral-7B-Instruct-v0.2-GGUF
+bash <(curl -sSL https://raw.githubusercontent.com/reuc/HuggingFaceModelDownloader/main/scripts/gist_gethfd.sh) serve   # Web UI
 ```
 
 ### Download Binary
 
-Get from [Releases](https://github.com/bodaay/HuggingFaceModelDownloader/releases):
+Get from [Releases](https://github.com/reuc/HuggingFaceModelDownloader/releases):
 
 | Platform | Architecture | File |
 |----------|--------------|------|
@@ -555,7 +555,7 @@ Get from [Releases](https://github.com/bodaay/HuggingFaceModelDownloader/release
 ### Build from Source
 
 ```bash
-git clone https://github.com/bodaay/HuggingFaceModelDownloader
+git clone https://github.com/reuc/HuggingFaceModelDownloader
 cd HuggingFaceModelDownloader
 go build -o hfdownloader ./cmd/hfdownloader
 ```
@@ -563,15 +563,15 @@ go build -o hfdownloader ./cmd/hfdownloader
 ### Docker
 
 ```bash
-# Pull from GitHub Container Registry
-docker pull ghcr.io/bodaay/huggingfacemodeldownloader:latest
+# Pull from Docker Hub
+docker pull reuc/hfdownloader:latest
 
 # Or build locally
 docker build -t hfdownloader .
 
 # Run (mounts your local HF cache)
 docker run --rm -v ~/.cache/huggingface:/home/hfdownloader/.cache/huggingface \
-  ghcr.io/bodaay/huggingfacemodeldownloader download TheBloke/Mistral-7B-Instruct-v0.2-GGUF
+  reuc/hfdownloader download TheBloke/Mistral-7B-Instruct-v0.2-GGUF
 ```
 
 #### Docker environment variables
@@ -595,7 +595,7 @@ docker run -d -p 3000:3000 -p 2222:2222 \
   -e HTTP_PORT=3000 -e SSH_ENABLE=true -e SSH_PORT=2222 \
   -e AUTH_USER=admin -e AUTH_PASS=secret \
   -v ~/.cache/huggingface:/home/hfdownloader/.cache/huggingface \
-  ghcr.io/bodaay/huggingfacemodeldownloader serve
+  reuc/hfdownloader serve
 
 # Copy models out over SSH
 scp -P 2222 -r admin@localhost:.cache/huggingface/hub ./hub
@@ -706,6 +706,6 @@ are fully supported and permanent — neither is deprecated. See
 
 <div align="center">
 
-**[Full CLI Docs](docs/CLI.md)** • **[REST API](docs/API.md)** • **[V3 Features](docs/V3_FEATURES.md)** • **[Issues](https://github.com/bodaay/HuggingFaceModelDownloader/issues)**
+**[Full CLI Docs](docs/CLI.md)** • **[REST API](docs/API.md)** • **[V3 Features](docs/V3_FEATURES.md)** • **[Issues](https://github.com/reuc/HuggingFaceModelDownloader/issues)**
 
 </div>

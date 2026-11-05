@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/bodaay/HuggingFaceModelDownloader/pkg/hfdownloader"
+	"github.com/reuc/HuggingFaceModelDownloader/pkg/hfdownloader"
 )
 
 // The mirror endpoints resolved "target" as a name *or a raw path*, and the

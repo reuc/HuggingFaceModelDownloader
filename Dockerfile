@@ -113,7 +113,7 @@ CMD ["--help"]
 EXPOSE 8080
 
 # Labels
-LABEL org.opencontainers.image.source="https://github.com/bodaay/HuggingFaceModelDownloader"
+LABEL org.opencontainers.image.source="https://github.com/reuc/HuggingFaceModelDownloader"
 LABEL org.opencontainers.image.description="Fast, concurrent CLI and Web UI for downloading models and datasets from HuggingFace"
 LABEL org.opencontainers.image.licenses="Apache-2.0"
 

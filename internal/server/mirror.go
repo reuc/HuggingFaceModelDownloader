@@ -12,7 +12,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/bodaay/HuggingFaceModelDownloader/pkg/hfdownloader"
+	"github.com/reuc/HuggingFaceModelDownloader/pkg/hfdownloader"
 )
 
 // --- Mirror Target Management ---

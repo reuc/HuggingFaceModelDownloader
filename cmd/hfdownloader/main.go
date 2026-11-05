@@ -6,7 +6,7 @@ package main
 import (
 	"os"
 
-	"github.com/bodaay/HuggingFaceModelDownloader/internal/cli"
+	"github.com/reuc/HuggingFaceModelDownloader/internal/cli"
 )
 
 // Version is set at build time via ldflags

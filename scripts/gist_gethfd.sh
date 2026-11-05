@@ -1,16 +1,16 @@
 #!/bin/bash
 
 # HuggingFace Model Downloader - One-liner installer & runner
-# Hosted as GitHub Gist, shortened via Cloudflare Worker: https://g.bodaay.io/hfd
+# Served from this repo: https://raw.githubusercontent.com/reuc/HuggingFaceModelDownloader/main/scripts/gist_gethfd.sh
 #
 # Usage:
-#   bash <(curl -sSL https://g.bodaay.io/hfd) analyze MODEL -i      # Analyze model (interactive)
-#   bash <(curl -sSL https://g.bodaay.io/hfd) download MODEL        # Download a model
-#   bash <(curl -sSL https://g.bodaay.io/hfd) serve                 # Start web UI
-#   bash <(curl -sSL https://g.bodaay.io/hfd) serve --port 3000     # Start web UI on custom port
-#   bash <(curl -sSL https://g.bodaay.io/hfd) install               # Install to ~/.local/bin (no sudo)
-#   bash <(curl -sSL https://g.bodaay.io/hfd) install /usr/local/bin  # Install system-wide (may prompt for sudo)
-#   bash <(curl -sSL https://g.bodaay.io/hfd) install ~/bin         # Install to any custom path
+#   bash <(curl -sSL https://raw.githubusercontent.com/reuc/HuggingFaceModelDownloader/main/scripts/gist_gethfd.sh) analyze MODEL -i      # Analyze model (interactive)
+#   bash <(curl -sSL https://raw.githubusercontent.com/reuc/HuggingFaceModelDownloader/main/scripts/gist_gethfd.sh) download MODEL        # Download a model
+#   bash <(curl -sSL https://raw.githubusercontent.com/reuc/HuggingFaceModelDownloader/main/scripts/gist_gethfd.sh) serve                 # Start web UI
+#   bash <(curl -sSL https://raw.githubusercontent.com/reuc/HuggingFaceModelDownloader/main/scripts/gist_gethfd.sh) serve --port 3000     # Start web UI on custom port
+#   bash <(curl -sSL https://raw.githubusercontent.com/reuc/HuggingFaceModelDownloader/main/scripts/gist_gethfd.sh) install               # Install to ~/.local/bin (no sudo)
+#   bash <(curl -sSL https://raw.githubusercontent.com/reuc/HuggingFaceModelDownloader/main/scripts/gist_gethfd.sh) install /usr/local/bin  # Install system-wide (may prompt for sudo)
+#   bash <(curl -sSL https://raw.githubusercontent.com/reuc/HuggingFaceModelDownloader/main/scripts/gist_gethfd.sh) install ~/bin         # Install to any custom path
 
 set -e
 
@@ -42,7 +42,7 @@ case "$arch" in
 esac
 
 # GitHub repo and release info
-repo="bodaay/HuggingFaceModelDownloader"
+repo="reuc/HuggingFaceModelDownloader"
 binary_name="hfdownloader"
 
 # Check for install command (must be first argument)
@@ -157,7 +157,7 @@ if [ "$install_mode" = true ]; then
             echo "    Then reload your shell or run: source ~/.bashrc"
             if [ "$install_path_explicit" = false ]; then
                 echo "    (or re-run with an explicit path:"
-                echo "        bash <(curl -sSL https://g.bodaay.io/hfd) install /usr/local/bin)"
+                echo "        bash <(curl -sSL https://raw.githubusercontent.com/reuc/HuggingFaceModelDownloader/main/scripts/gist_gethfd.sh) install /usr/local/bin)"
             fi
             ;;
     esac

@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bodaay/HuggingFaceModelDownloader/internal/hubtree"
+	"github.com/reuc/HuggingFaceModelDownloader/internal/hubtree"
 )
 
 // DefaultEndpoint is the default HuggingFace Hub URL.

@@ -15,7 +15,7 @@ import (
 
 	"golang.org/x/term"
 
-	"github.com/bodaay/HuggingFaceModelDownloader/pkg/hfdownloader"
+	"github.com/reuc/HuggingFaceModelDownloader/pkg/hfdownloader"
 )
 
 // LiveRenderer renders a cross-platform, adaptive, colorful progress table.

@@ -1,4 +1,4 @@
-module github.com/bodaay/HuggingFaceModelDownloader
+module github.com/reuc/HuggingFaceModelDownloader
 
 go 1.25.0
 

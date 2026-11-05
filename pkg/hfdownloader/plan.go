@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bodaay/HuggingFaceModelDownloader/internal/filtermatch"
+	"github.com/reuc/HuggingFaceModelDownloader/internal/filtermatch"
 )
 
 // unsafeRepoPath reports whether a relative path returned by the repo tree API

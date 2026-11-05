@@ -33,10 +33,10 @@ Complete command-line reference for `hfdownloader`.
 
 ```bash
 # One-liner install (Linux/macOS/WSL)
-bash <(curl -sSL https://g.bodaay.io/hfd) -i
+bash <(curl -sSL https://raw.githubusercontent.com/reuc/HuggingFaceModelDownloader/main/scripts/gist_gethfd.sh) -i
 
 # Or build from source
-git clone https://github.com/bodaay/HuggingFaceModelDownloader
+git clone https://github.com/reuc/HuggingFaceModelDownloader
 cd HuggingFaceModelDownloader
 go build -o hfdownloader ./cmd/hfdownloader
 ```
@@ -1195,4 +1195,4 @@ Interrupted downloads can be resumed by running the same command again.
 - [V3 Features Documentation](V3_FEATURES.md)
 - [REST API Documentation](API.md)
 - [Main README](../README.md)
-- [GitHub Issues](https://github.com/bodaay/HuggingFaceModelDownloader/issues)
+- [GitHub Issues](https://github.com/reuc/HuggingFaceModelDownloader/issues)

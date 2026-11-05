@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bodaay/HuggingFaceModelDownloader/internal/hubtree"
+	"github.com/reuc/HuggingFaceModelDownloader/internal/hubtree"
 )
 
 const defaultEndpoint = "https://huggingface.co"
