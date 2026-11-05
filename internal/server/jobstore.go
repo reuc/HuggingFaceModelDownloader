@@ -76,11 +76,45 @@ func writeJobsFile(path string, state *jobsState) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
+	return writeFileDurable(path, data, 0o600)
+}
+
+// writeFileDurable replaces path with data so that after a crash or power loss
+// the file holds either the old or the new contents, never a truncated or
+// empty one. The data is written to a temp file in the same directory, flushed
+// to disk, then renamed over path (os.Rename replaces an existing file on all
+// platforms, including Windows). Finally the directory is synced so the rename
+// itself survives a crash; that step is best effort because Windows can't
+// fsync a directory.
+func writeFileDurable(path string, data []byte, perm os.FileMode) error {
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
+	if err != nil {
 		return err
 	}
-	return os.Rename(tmp, path)
+	if _, err := f.Write(data); err != nil {
+		f.Close()
+		os.Remove(tmp)
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		os.Remove(tmp)
+		return err
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	if d, err := os.Open(filepath.Dir(path)); err == nil {
+		_ = d.Sync()
+		d.Close()
+	}
+	return nil
 }
 
 // loadJobs restores the job list saved by a previous server process. Jobs that

@@ -4,6 +4,7 @@
 package server
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -145,5 +146,32 @@ func TestJobsFileDisabled(t *testing.T) {
 	m.WaitAll(2 * time.Second)
 	if _, err := os.Stat(DefaultJobsFile()); !os.IsNotExist(err) {
 		t.Fatalf("jobs file written with persistence disabled (stat err: %v)", err)
+	}
+}
+
+// TestWriteFileDurableOverwrites checks that a second save replaces an
+// existing jobs file (the case a code review flagged for Windows) and leaves
+// no temp file behind.
+func TestWriteFileDurableOverwrites(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "jobs.json")
+	if err := writeJobsFile(path, &jobsState{Version: jobsFileVersion, Queue: []string{"a"}}); err != nil {
+		t.Fatalf("first save: %v", err)
+	}
+	if err := writeJobsFile(path, &jobsState{Version: jobsFileVersion, Queue: []string{"b"}}); err != nil {
+		t.Fatalf("second save: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got jobsState
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Queue) != 1 || got.Queue[0] != "b" {
+		t.Fatalf("queue = %v, want [b]", got.Queue)
+	}
+	if _, err := os.Stat(path + ".tmp"); !os.IsNotExist(err) {
+		t.Fatalf("temp file left behind: %v", err)
 	}
 }
