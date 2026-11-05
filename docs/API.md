@@ -1472,4 +1472,4 @@ No rate limiting is implemented. For production deployments, consider using a re
 
 - [CLI Reference](CLI.md)
 - [Main README](../README.md)
-- [GitHub Issues](https://github.com/bodaay/HuggingFaceModelDownloader/issues)
+- [GitHub Issues](https://github.com/reuc/HuggingFaceModelDownloader/issues)

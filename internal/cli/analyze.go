@@ -12,9 +12,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/bodaay/HuggingFaceModelDownloader/internal/tui"
-	"github.com/bodaay/HuggingFaceModelDownloader/pkg/hfdownloader"
-	"github.com/bodaay/HuggingFaceModelDownloader/pkg/smartdl"
+	"github.com/reuc/HuggingFaceModelDownloader/internal/tui"
+	"github.com/reuc/HuggingFaceModelDownloader/pkg/hfdownloader"
+	"github.com/reuc/HuggingFaceModelDownloader/pkg/smartdl"
 )
 
 func newAnalyzeCmd(ctx context.Context, ro *RootOpts) *cobra.Command {

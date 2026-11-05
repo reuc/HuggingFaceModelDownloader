@@ -12,7 +12,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/bodaay/HuggingFaceModelDownloader/internal/filtermatch"
+	"github.com/reuc/HuggingFaceModelDownloader/internal/filtermatch"
 )
 
 // ExportOptions configures RepoDir.Export.

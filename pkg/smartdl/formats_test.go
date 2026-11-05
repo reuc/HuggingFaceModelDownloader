@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/bodaay/HuggingFaceModelDownloader/internal/filtermatch"
+	"github.com/reuc/HuggingFaceModelDownloader/internal/filtermatch"
 )
 
 // formatFilterSelects reports whether an item's filter selects path.

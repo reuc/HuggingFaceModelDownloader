@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bodaay/HuggingFaceModelDownloader/pkg/hfdownloader"
+	"github.com/reuc/HuggingFaceModelDownloader/pkg/hfdownloader"
 )
 
 // JobStatus represents the state of a download job.
@@ -48,7 +48,7 @@ type Job struct {
 	Files      []JobFileProgress `json:"files,omitempty"`
 	// QueueSeq increases every time the job is (re)queued, so sorting queued
 	// jobs by it gives the order they will be downloaded in.
-	QueueSeq   int64             `json:"queueSeq,omitempty"`
+	QueueSeq int64 `json:"queueSeq,omitempty"`
 
 	cancel     context.CancelFunc `json:"-"`
 	generation int                `json:"-"` // Tracks which runJob instance is current

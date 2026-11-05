@@ -26,7 +26,7 @@ Download a model with default settings:
 		"fmt"
 		"log"
 
-		"github.com/bodaay/HuggingFaceModelDownloader/pkg/hfdownloader"
+		"github.com/reuc/HuggingFaceModelDownloader/pkg/hfdownloader"
 	)
 
 	func main() {

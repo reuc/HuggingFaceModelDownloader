@@ -506,7 +506,7 @@ create_github_release() {
         RELEASE_URL="$release_url"
     else
         print_error "Failed to create release: $release_url"
-        print_info "You can create it manually at: https://github.com/bodaay/HuggingFaceModelDownloader/releases/new"
+        print_info "You can create it manually at: https://github.com/reuc/HuggingFaceModelDownloader/releases/new"
     fi
 }
 
@@ -532,7 +532,7 @@ show_summary() {
 
     echo -e "${WHITE}To publish the release:${NC}"
     echo ""
-    echo -e "  ${WHITE}1.${NC} Go to: ${CYAN}https://github.com/bodaay/HuggingFaceModelDownloader/releases${NC}"
+    echo -e "  ${WHITE}1.${NC} Go to: ${CYAN}https://github.com/reuc/HuggingFaceModelDownloader/releases${NC}"
     echo ""
     echo -e "  ${WHITE}2.${NC} Find the draft release ${CYAN}v$NEW_VERSION${NC}"
     echo ""
@@ -557,11 +557,11 @@ show_summary() {
     # Offer to open in browser
     if command -v open &> /dev/null; then
         if prompt_yes_no "Open release in browser?" "y"; then
-            open "https://github.com/bodaay/HuggingFaceModelDownloader/releases"
+            open "https://github.com/reuc/HuggingFaceModelDownloader/releases"
         fi
     elif command -v xdg-open &> /dev/null; then
         if prompt_yes_no "Open release in browser?" "y"; then
-            xdg-open "https://github.com/bodaay/HuggingFaceModelDownloader/releases"
+            xdg-open "https://github.com/reuc/HuggingFaceModelDownloader/releases"
         fi
     fi
 }

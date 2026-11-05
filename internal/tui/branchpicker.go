@@ -9,7 +9,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/bodaay/HuggingFaceModelDownloader/pkg/smartdl"
+	"github.com/reuc/HuggingFaceModelDownloader/pkg/smartdl"
 )
 
 // BranchPickerResult contains the result of branch selection.

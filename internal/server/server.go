@@ -14,9 +14,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bodaay/HuggingFaceModelDownloader/internal/assets"
-	"github.com/bodaay/HuggingFaceModelDownloader/pkg/hfdownloader"
 	"github.com/gorilla/websocket"
+	"github.com/reuc/HuggingFaceModelDownloader/internal/assets"
+	"github.com/reuc/HuggingFaceModelDownloader/pkg/hfdownloader"
 )
 
 // Config holds server configuration.

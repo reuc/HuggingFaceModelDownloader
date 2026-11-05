@@ -16,8 +16,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bodaay/HuggingFaceModelDownloader/pkg/hfdownloader"
-	"github.com/bodaay/HuggingFaceModelDownloader/pkg/smartdl"
+	"github.com/reuc/HuggingFaceModelDownloader/pkg/hfdownloader"
+	"github.com/reuc/HuggingFaceModelDownloader/pkg/smartdl"
 )
 
 // DownloadRequest is the request body for starting a download.

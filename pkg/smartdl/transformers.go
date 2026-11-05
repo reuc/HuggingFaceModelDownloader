@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/bodaay/HuggingFaceModelDownloader/internal/filtermatch"
+	"github.com/reuc/HuggingFaceModelDownloader/internal/filtermatch"
 )
 
 // analyzeTransformers performs detailed analysis of a Transformers model.

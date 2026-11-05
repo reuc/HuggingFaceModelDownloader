@@ -11,7 +11,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/bodaay/HuggingFaceModelDownloader/internal/filtermatch"
+	"github.com/reuc/HuggingFaceModelDownloader/internal/filtermatch"
 )
 
 // GGUF quantization quality ratings (1-5 stars).

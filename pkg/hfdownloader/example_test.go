@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/bodaay/HuggingFaceModelDownloader/pkg/hfdownloader"
+	"github.com/reuc/HuggingFaceModelDownloader/pkg/hfdownloader"
 )
 
 func ExampleDownload() {

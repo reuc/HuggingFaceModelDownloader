@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/bodaay/HuggingFaceModelDownloader/pkg/smartdl"
+	"github.com/reuc/HuggingFaceModelDownloader/pkg/smartdl"
 )
 
 func TestNewAnalyzeCmd(t *testing.T) {

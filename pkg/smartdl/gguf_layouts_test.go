@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/bodaay/HuggingFaceModelDownloader/internal/filtermatch"
+	"github.com/reuc/HuggingFaceModelDownloader/internal/filtermatch"
 )
 
 func ggufFiles(paths ...string) []FileInfo {
