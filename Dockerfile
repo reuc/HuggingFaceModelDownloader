@@ -14,9 +14,11 @@
 #   docker run --rm -v ~/.cache/huggingface:/home/hfdownloader/.cache/huggingface \
 #     hfdownloader download TheBloke/Mistral-7B-Instruct-v0.2-GGUF:q4_k_m
 #
-# Run Web Server:
+# Run Web Server (mount .config to keep settings and the download queue
+# across restarts; queued/interrupted downloads resume on startup):
 #   docker run --rm -p 8080:8080 \
 #     -v ~/.cache/huggingface:/home/hfdownloader/.cache/huggingface \
+#     -v ./hfd-config:/home/hfdownloader/.config \
 #     hfdownloader serve --port 8080
 #
 # With HuggingFace token (for private/gated models):
@@ -78,8 +80,10 @@ RUN adduser -D -u 1000 hfdownloader
 COPY --from=builder /hfdownloader /usr/local/bin/hfdownloader
 COPY scripts/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
-# Create HuggingFace cache directory (v3 default) and legacy data directory
-RUN mkdir -p /home/hfdownloader/.cache/huggingface/hub \
+# Create HuggingFace cache directory (v3 default), config directory (settings,
+# mirror targets and the saved download queue) and legacy data directory
+RUN mkdir -p /home/hfdownloader/.config/hfdownloader \
+             /home/hfdownloader/.cache/huggingface/hub \
              /home/hfdownloader/.cache/huggingface/models \
              /home/hfdownloader/.cache/huggingface/datasets \
              /data/Models /data/Datasets && \
@@ -89,8 +93,11 @@ RUN mkdir -p /home/hfdownloader/.cache/huggingface/hub \
 # drops to the hfdownloader user before running the app. Pass --user 1000 to
 # skip root entirely (SSH_ENABLE is then unavailable).
 
-# Set HF_HOME for the container (and for SSH sessions)
-ENV HF_HOME=/home/hfdownloader/.cache/huggingface
+# Set HF_HOME for the container (and for SSH sessions). HOME is pinned so
+# settings and the download queue live in /home/hfdownloader/.config even
+# when the container runs as a custom uid (--user 568:568) with no passwd entry.
+ENV HF_HOME=/home/hfdownloader/.cache/huggingface \
+    HOME=/home/hfdownloader
 RUN echo "export HF_HOME=$HF_HOME" > /etc/profile.d/hfdownloader.sh && \
     chmod +x /usr/local/bin/docker-entrypoint.sh
 
