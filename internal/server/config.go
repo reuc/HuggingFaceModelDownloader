@@ -31,6 +31,7 @@ type ConfigFile struct {
 	Proxy              *ProxyConfig `json:"proxy,omitempty" yaml:"proxy,omitempty"`
 	LinkMode           string       `json:"link-mode,omitempty" yaml:"link-mode,omitempty"`
 	Flatten            bool         `json:"flatten,omitempty" yaml:"flatten,omitempty"`
+	ConvertOnBoot      bool         `json:"convert-on-boot,omitempty" yaml:"convert-on-boot,omitempty"`
 	ExportDir          string       `json:"export-dir,omitempty" yaml:"export-dir,omitempty"`
 	MirrorDir          string       `json:"mirror-dir,omitempty" yaml:"mirror-dir,omitempty"`
 }
@@ -241,6 +242,9 @@ func ApplyConfigToServer(serverCfg *Config) error {
 	}
 	if fileCfg.Flatten {
 		serverCfg.Flatten = true
+	}
+	if fileCfg.ConvertOnBoot {
+		serverCfg.ConvertOnBoot = true
 	}
 	if serverCfg.ExportDir == "" && fileCfg.ExportDir != "" {
 		serverCfg.ExportDir = fileCfg.ExportDir

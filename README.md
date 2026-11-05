@@ -300,7 +300,14 @@ hfdownloader flatten TheBloke/Mistral-7B-Instruct-v0.2-GGUF   # one repo
 hfdownloader flatten --all                                     # everything in hub/
 ```
 
-or use **Convert to real files** on a repo in the web UI's Cache browser. All
+or use **Convert to real files** on a repo in the web UI's Cache browser, or
+let the server do it at every start with `serve --flatten --convert-on-boot`
+(Docker: `FLATTEN=true` and `CONVERT_ON_BOOT=true`). The startup conversion
+runs before any download resumes, skips repos with a queued, running or
+paused download, and never deletes other revisions: repos that have them are
+skipped and logged with the command that converts them anyway. If the server
+is stopped meanwhile, it stops after the current repo; the rest are converted
+on the next start. All
 files cached for the kept revision (the last one downloaded, else `main`) are
 moved; repos downloaded by Python's `huggingface_hub` work too. If a repo has
 other revisions or an unfinished download cached, those would be deleted, so
@@ -577,6 +584,7 @@ docker run --rm -v ~/.cache/huggingface:/home/hfdownloader/.cache/huggingface \
 | `SSH_ENABLE` | `false` | Start an SSH/SFTP server in the container (`true`/`false`) |
 | `SSH_PORT` | `22` | SSH server port, used only when `SSH_ENABLE=true` |
 | `FLATTEN` | unset | Store finished downloads only as real files in `models/` / `datasets/` (same as `serve --flatten`). When set to `true` or `false` it overrides `flatten` in the config file |
+| `CONVERT_ON_BOOT` | unset | At startup, convert every completed download already in `hub/` to real files (same as `serve --convert-on-boot`; use with `FLATTEN=true`). Set/unset like `FLATTEN` |
 
 `AUTH_USER` and `AUTH_PASS` must be set together, and `SSH_ENABLE` requires both.
 Flags passed on the command line override these variables.

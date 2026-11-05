@@ -44,6 +44,8 @@ services:
       SSH_PORT: "2222"
       FLATTEN: "false"               # "true": finished downloads become real files in
                                      # cache/models/<owner>/<name>, removed from cache/hub/
+      CONVERT_ON_BOOT: "false"       # "true" (with FLATTEN "true"): at every start, also
+                                     # convert downloads already in cache/hub/ to real files
       HF_TOKEN: ""                   # <-- CHANGE (optional) hf_xxx for gated models
 
     ports:

@@ -276,6 +276,7 @@ hfdownloader serve [flags]
 | `--allow-origin` | | strings | | Extra browser origin allowed to call the API (repeatable; `*` allows any). Other origins get 403 |
 | `--export-dir` | | string | | Enable "Export as real files" in the web UI, writing to `<export-dir>/<owner>/<name>` |
 | `--flatten` | | bool | config `flatten`, else `false` | Store every finished download only as real files in `models/` / `datasets/` (no `hub/` entry); Docker: `FLATTEN=true` |
+| `--convert-on-boot` | | bool | config `convert-on-boot`, else `false` | At startup, before downloads resume, convert every completed download in `hub/` to real files, like `flatten --all` (repos with active downloads or other cached revisions are skipped); Docker: `CONVERT_ON_BOOT=true` |
 | `--mirror-dir` | | string | | Allow the web UI to add/remove mirror targets, but only inside this directory. Without it, targets can only be registered on the server with `mirror target add`; the API never accepts raw paths |
 | `--link-mode` | | string | config `link-mode`, else `auto` | Link mode for downloads: `auto`, `symlink`, `hardlink`, `copy` (see `download`) |
 | `--models-dir` | | string | `./Models` | Legacy models directory |
@@ -1043,7 +1044,7 @@ Configuration is loaded from the first of:
 
 Command-line flags always win over the file. Besides the keys below, the file
 may hold `cache-dir`, `stall-timeout`, `link-mode`, `flatten` (true/false) and (for `serve`)
-`export-dir` and `mirror-dir`. Saving settings in the web UI rewrites only the keys it manages
+`export-dir`, `mirror-dir` and `convert-on-boot` (true/false). Saving settings in the web UI rewrites only the keys it manages
 (`token`, `connections`, `max-active`, `multipart-threshold`, `verify`,
 `retries`, `endpoint`, `proxy`) and keeps everything else.
 
