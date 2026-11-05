@@ -418,9 +418,9 @@ func TestVRAMHuman(t *testing.T) {
 	}{
 		{"zero", 0, "0 B"},
 		{"bytes", 512, "512 B"},
-		{"kilobytes", 1536, "1.5 KiB"},
-		{"megabytes", 256 * 1024 * 1024, "256.0 MiB"},
-		{"gigabytes", 8 * 1024 * 1024 * 1024, "8.0 GiB"},
+		{"kilobytes", 1500, "1.5 kB"},
+		{"megabytes", 256 * 1000 * 1000, "256.0 MB"},
+		{"gigabytes", 8 * 1000 * 1000 * 1000, "8.0 GB"},
 	}
 
 	for _, tt := range tests {

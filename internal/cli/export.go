@@ -71,9 +71,9 @@ Examples:
 			}
 			if !isDataset {
 				// Fall back to a cached dataset of that name.
-				if _, err := os.Stat(repoDir.Path()); os.IsNotExist(err) {
+				if _, err := os.Stat(repoDir.Path()); os.IsNotExist(err) && !repoDir.IsFlat() {
 					if ds, err := cache.Repo(repo, hfdownloader.RepoTypeDataset); err == nil {
-						if _, err := os.Stat(ds.Path()); err == nil {
+						if _, err := os.Stat(ds.Path()); err == nil || ds.IsFlat() {
 							repoDir = ds
 						}
 					}

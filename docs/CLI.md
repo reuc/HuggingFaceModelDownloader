@@ -17,6 +17,7 @@ Complete command-line reference for `hfdownloader`.
   - [info](#info)
   - [rebuild](#rebuild)
   - [export](#export)
+  - [flatten](#flatten)
   - [mirror](#mirror)
   - [proxy](#proxy)
   - [config](#config)
@@ -152,6 +153,7 @@ The `download` subcommand is required: `hfdownloader owner/name` fails with
 | `--endpoint` | | string | `https://huggingface.co` | Custom endpoint (mirrors) |
 | `--no-manifest` | | bool | `false` | Don't write hfd.yaml manifest |
 | `--no-friendly` | | bool | `false` | Don't create friendly symlinks |
+| `--flatten` | | bool | `false` (config `flatten`) | When the download completes, move the files into `models/<owner>/<name>` (or `datasets/`) as real files and remove the repo from `hub/`. Not with `--no-manifest` or `--no-friendly`. See [Flattened storage](../README.md#flattened-storage-real-files-in-models-only) |
 | `--dry-run` | | bool | `false` | Plan only, no download |
 | `--plan-format` | | string | `table` | Plan format: table, json (`--json` also prints JSON) |
 
@@ -273,6 +275,7 @@ hfdownloader serve [flags]
 | `--auth-pass` | | string | | Basic auth password (must be used with `--auth-user`) |
 | `--allow-origin` | | strings | | Extra browser origin allowed to call the API (repeatable; `*` allows any). Other origins get 403 |
 | `--export-dir` | | string | | Enable "Export as real files" in the web UI, writing to `<export-dir>/<owner>/<name>` |
+| `--flatten` | | bool | config `flatten`, else `false` | Store every finished download only as real files in `models/` / `datasets/` (no `hub/` entry); Docker: `FLATTEN=true` |
 | `--mirror-dir` | | string | | Allow the web UI to add/remove mirror targets, but only inside this directory. Without it, targets can only be registered on the server with `mirror target add`; the API never accepts raw paths |
 | `--link-mode` | | string | config `link-mode`, else `auto` | Link mode for downloads: `auto`, `symlink`, `hardlink`, `copy` (see `download`) |
 | `--models-dir` | | string | `./Models` | Legacy models directory |
@@ -382,7 +385,7 @@ Output varies by detected type; for a small Transformers repo:
 Repository: hf-internal-testing/tiny-random-gpt2
 Type:       transformers (Transformers model (safetensors))
 Files:      10
-Total Size: 11.9 MiB
+Total Size: 12.5 MB
 
 Model Configuration:
   Vocab Size:      1000
@@ -391,8 +394,8 @@ Model Configuration:
 Weight Files:
   NAME                                                   SIZE  FORMAT
   ---------------------------------------------  ------------  ------
-  model.safetensors                                 443.2 KiB  safetensors
-  pytorch_model.bin                                   3.4 MiB  pytorch_bin
+  model.safetensors                                  453.8 kB  safetensors
+  pytorch_model.bin                                    3.6 MB  pytorch_bin
 ...
 Download Commands:
   Full:        hfdownloader download hf-internal-testing/tiny-random-gpt2
@@ -440,13 +443,13 @@ hfdownloader list --scan
 
 #### Sample Output
 
-Sizes are shown in binary units (B, KiB, MiB, GiB).
+Sizes are shown in decimal units (B, kB, MB, GB; 1 GB = 1,000,000,000 bytes).
 
 ```
 TYPE     REPO                                    COMMIT   DOWNLOADED  FILES        SIZE  BRANCH
 -------  --------------------------------------  -------  ----------  -----  ----------  ------
-model    TheBloke/Mistral-7B-Instruct-v0.2-GGUF  41b61a3  2024-01-15      4     4.1 GiB  main
-dataset  facebook/flores                         7d4c3b1  2024-01-10     12   128.0 MiB  main
+model    TheBloke/Mistral-7B-Instruct-v0.2-GGUF  41b61a3  2024-01-15      4      4.4 GB  main
+dataset  facebook/flores                         7d4c3b1  2024-01-10     12    134.2 MB  main
 
 Total: 2 repos
 (Use --scan to include repos without manifests)
@@ -484,7 +487,7 @@ hfdownloader info Mistral-7B --format json
 
 #### Sample Output
 
-Sizes are shown in binary units (B, KiB, MiB, GiB). A partial name must match
+Sizes are shown in decimal units (B, kB, MB, GB; 1 GB = 1,000,000,000 bytes). A partial name must match
 exactly one downloaded repo.
 
 ```
@@ -493,7 +496,7 @@ Type:       model
 Branch:     main
 Commit:     41b61a33a2483885c981aa79e0df6b32407ed873
 Files:      3
-Size:       4.1 GiB
+Size:       4.4 GB
 Downloaded: 2024-01-15 10:30:45
 
 Friendly path: /home/user/.cache/huggingface/models/TheBloke/Mistral-7B-Instruct-v0.2-GGUF
@@ -504,9 +507,9 @@ Command: hfdownloader download TheBloke/Mistral-7B-Instruct-v0.2-GGUF -F q4_k_m
 Files:
   NAME                                                      SIZE  LFS
   --------------------------------------------------  ----------  ---
-  config.json                                              1.2 KiB
-  mistral-7b-instruct-v0.2.Q4_K_M.gguf                     4.1 GiB  yes
-  README.md                                                8.5 KiB
+  config.json                                               1.2 kB
+  mistral-7b-instruct-v0.2.Q4_K_M.gguf                      4.4 GB  yes
+  README.md                                                 8.7 kB
 ```
 
 ---
@@ -605,6 +608,47 @@ download manifest.
 hfdownloader export TheBloke/Mistral-7B-Instruct-v0.2-GGUF ~/lmstudio/models/TheBloke/Mistral-7B
 hfdownloader export unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF ./qwen -F q4_k_m
 hfdownloader export --dataset nyu-mll/glue ./glue --mode hardlink   # no extra disk space
+```
+
+---
+
+### flatten
+
+Convert repos already in the cache to real files in `models/` (or
+`datasets/`) and remove them from `hub/` — the same result as downloading
+them with `--flatten`. Nothing is downloaded and each file is stored once.
+
+```
+hfdownloader flatten <repo>... [flags]
+hfdownloader flatten --all [flags]
+```
+
+Every file cached for one revision is kept: the revision the last download
+recorded in `hfd.yaml`, else `main`, else the only cached snapshot (choose
+another with `-b`). Repos downloaded by Python's `huggingface_hub` work too.
+A repo with other revisions or an unfinished download (partial files) cached
+is skipped, because flattening would delete those, unless you pass `--yes`.
+A repo another process is still downloading is skipped either way.
+
+#### Flags
+
+| Flag | Short | Type | Default | Description |
+|------|-------|------|---------|-------------|
+| `--cache-dir` | | string | `~/.cache/huggingface` | Cache directory |
+| `--revision` | `-b` | string | last downloaded, else `main` | Branch, tag or commit to keep (not with `--all`) |
+| `--dataset` | | bool | `false` | The repo is a dataset |
+| `--all` | | bool | `false` | Flatten every repo in `hub/` |
+| `--yes` | `-y` | bool | `false` | Also flatten repos with other revisions or unfinished downloads cached (those are deleted) |
+
+Exits non-zero if any repo was not flattened; repos that are already flat
+count as done. `--json` prints one result per repo.
+
+#### Examples
+
+```bash
+hfdownloader flatten TheBloke/Mistral-7B-Instruct-v0.2-GGUF
+hfdownloader flatten --dataset nyu-mll/glue
+hfdownloader flatten --all --yes
 ```
 
 ---
@@ -998,7 +1042,7 @@ Configuration is loaded from the first of:
 4. `~/.config/hfdownloader.yml`
 
 Command-line flags always win over the file. Besides the keys below, the file
-may hold `cache-dir`, `stall-timeout`, `link-mode` and (for `serve`)
+may hold `cache-dir`, `stall-timeout`, `link-mode`, `flatten` (true/false) and (for `serve`)
 `export-dir` and `mirror-dir`. Saving settings in the web UI rewrites only the keys it manages
 (`token`, `connections`, `max-active`, `multipart-threshold`, `verify`,
 `retries`, `endpoint`, `proxy`) and keeps everything else.

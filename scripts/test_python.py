@@ -10,6 +10,8 @@ Test scenarios:
 2. Download with Go -> verify structure matches Python's
 3. Download with Python -> read with Go (friendly view)
 4. Download with Go -> read with Python (transformers/huggingface_hub)
+5. Download with Go --flatten -> real files only in models/, no hub/ entry,
+   and Python loads the model from that folder path
 """
 
 import os
@@ -122,15 +124,17 @@ def download_with_python(repo_id: str, revision: str = "main"):
         return False
 
 
-def download_with_go(repo_id: str, filters: str = None, is_dataset: bool = False):
+def download_with_go(repo_id: str, filters: str = None, is_dataset: bool = False, flatten: bool = False):
     """Download a model using our Go downloader."""
-    print(f"  Downloading {repo_id} with Go...")
+    print(f"  Downloading {repo_id} with Go{' --flatten' if flatten else ''}...")
 
     cmd = [str(GO_BINARY), "download", repo_id, "--cache-dir", str(CACHE_DIR), "-q"]
     if filters:
         cmd.extend(["-F", filters])
     if is_dataset:
         cmd.append("--dataset")
+    if flatten:
+        cmd.append("--flatten")
 
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
@@ -483,6 +487,71 @@ def test_friendly_view_symlinks():
     passed("All friendly view symlinks resolve correctly")
 
 
+def test_go_flatten_download():
+    """--flatten: the finished download is only real files in models/."""
+    print_test("Go Download --flatten - real files in models/, no hub/ entry")
+
+    # Python already put this repo in hub/; flattening must take it over.
+    if not download_with_go(TEST_MODEL_PYTHON, flatten=True):
+        failed("Go --flatten download failed")
+        return
+
+    owner, name = TEST_MODEL_PYTHON.split("/")
+    hub_entry = CACHE_DIR / "hub" / f"models--{owner}--{name}"
+    if hub_entry.exists():
+        failed(f"hub/ entry still exists: {hub_entry}")
+        return
+    passed("hub/ entry removed")
+
+    flat_dir = CACHE_DIR / "models" / owner / name
+    if not flat_dir.is_dir():
+        failed(f"Folder not found: {flat_dir}")
+        return
+
+    files = [f for f in flat_dir.rglob("*") if f.name != "hfd.yaml" and not f.is_dir()]
+    links = [f for f in files if f.is_symlink()]
+    if not files:
+        failed("No files in the models/ folder")
+        return
+    if links:
+        failed(f"Still links, not real files: {', '.join(f.name for f in links)}")
+        return
+    passed(f"{len(files)} real files in models/{owner}/{name}/")
+
+    manifest = (flat_dir / "hfd.yaml").read_text() if (flat_dir / "hfd.yaml").exists() else ""
+    if "storage: flat" in manifest:
+        passed("hfd.yaml records storage: flat")
+    else:
+        failed("hfd.yaml missing or does not record storage: flat")
+
+
+def test_python_reads_flat_download():
+    """Python loads a flattened model by folder path (there is no hub/ entry)."""
+    print_test("Cross-compatibility: Python reads --flatten download from models/")
+
+    owner, name = TEST_MODEL_PYTHON.split("/")
+    flat_dir = CACHE_DIR / "models" / owner / name
+    config_file = flat_dir / "config.json"
+    if not config_file.is_file():
+        failed(f"config.json not found in {flat_dir}")
+        return
+
+    try:
+        from transformers import AutoConfig, AutoTokenizer
+    except ImportError:
+        # Without transformers, check the files are plain readable data.
+        json.loads(config_file.read_text())
+        passed(f"config.json readable from {flat_dir} (install transformers for a full load test)")
+        return
+
+    # A folder path instead of a repo id: transformers reads the files there
+    # and never looks in hub/.
+    config = AutoConfig.from_pretrained(str(flat_dir))
+    passed(f"AutoConfig.from_pretrained('{flat_dir}') -> {config.model_type}")
+    AutoTokenizer.from_pretrained(str(flat_dir))
+    passed("AutoTokenizer.from_pretrained(folder) works")
+
+
 def print_cache_tree():
     """Print the cache directory structure."""
     print_header("Cache Structure")
@@ -536,6 +605,8 @@ def main():
     test_structure_comparison()
     test_python_reads_go_download()
     test_friendly_view_symlinks()
+    test_go_flatten_download()
+    test_python_reads_flat_download()
 
     # Print final structure
     print_cache_tree()

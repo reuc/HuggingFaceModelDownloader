@@ -49,7 +49,12 @@ func TestJobsSurviveRestart(t *testing.T) {
 	m1.mu.Unlock()
 	m1.saveJobs()
 	// m1 is now "killed": its runner never returns, nothing else is saved.
-	t.Cleanup(func() { close(block) })
+	// Unblocking it at the end makes it finish and save once more; wait for
+	// that, or the save races the removal of the temp dir.
+	t.Cleanup(func() {
+		close(block)
+		m1.WaitAll(2 * time.Second)
+	})
 
 	m2 := NewJobManager(cfg, nil)
 	var order []string
@@ -171,7 +176,7 @@ func TestWriteFileDurableOverwrites(t *testing.T) {
 	if len(got.Queue) != 1 || got.Queue[0] != "b" {
 		t.Fatalf("queue = %v, want [b]", got.Queue)
 	}
-	if _, err := os.Stat(path + ".tmp"); !os.IsNotExist(err) {
-		t.Fatalf("temp file left behind: %v", err)
+	if left, _ := filepath.Glob(path + ".*.tmp"); len(left) > 0 {
+		t.Fatalf("temp file left behind: %v", left)
 	}
 }

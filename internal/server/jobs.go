@@ -627,6 +627,7 @@ func (m *JobManager) runJob(job *Job) {
 		Endpoint:           cfg.Endpoint,
 		Proxy:              cfg.Proxy,
 		LinkMode:           cfg.LinkMode,
+		Flatten:            cfg.Flatten,
 		// Recorded in the hfd.yaml manifest; the cache browser reads the
 		// filters back from it to show filtered downloads as "filtered".
 		Command: jobCommand(job),

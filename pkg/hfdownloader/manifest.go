@@ -28,7 +28,11 @@ type DownloadManifest struct {
 	Repo     string `yaml:"repo" json:"repo"`           // "owner/name"
 	Branch   string `yaml:"branch" json:"branch"`       // Branch name (usually "main")
 	Commit   string `yaml:"commit" json:"commit"`       // Commit hash
-	RepoPath string `yaml:"repo_path" json:"repo_path"` // Relative path to hub cache (e.g., "hub/models--owner--repo")
+	RepoPath string `yaml:"repo_path" json:"repo_path"` // Relative path to hub cache (e.g., "hub/models--owner--repo"); empty when flat
+	// Storage is "flat" (StorageFlat) when the files in this directory are
+	// the real data and the repo has no hub/ entry (Settings.Flatten). Empty
+	// means the usual HF cache layout, where this directory holds links.
+	Storage string `yaml:"storage,omitempty" json:"storage,omitempty"`
 
 	// Timing
 	StartedAt   time.Time `yaml:"started_at" json:"started_at"`     // When download started
@@ -51,6 +55,10 @@ type ManifestFile struct {
 	Blob string `yaml:"blob" json:"blob"` // Relative path to blob (e.g., "blobs/abc123...")
 	Size int64  `yaml:"size" json:"size"` // File size in bytes
 	LFS  bool   `yaml:"lfs" json:"lfs"`   // Is LFS file
+	// ModTime is the file's modification time (Unix nanoseconds) in a flat
+	// repo, recorded when it was placed. A later --flatten download trusts a
+	// file whose size, hash and ModTime still match without re-hashing it.
+	ModTime int64 `yaml:"mtime,omitempty" json:"mtime,omitempty"`
 }
 
 // ManifestBuilder helps construct a manifest during download.
@@ -94,6 +102,23 @@ func (b *ManifestBuilder) SetCommit(commit string) {
 	b.manifest.Commit = commit
 }
 
+// SetFlat records that the download is stored flat (Settings.Flatten): the
+// friendly view holds the real files and there is no hub/ entry. Blob entries
+// still name each file's content hash, which the next download uses to skip
+// unchanged files.
+func (b *ManifestBuilder) SetFlat() {
+	b.manifest.Storage = StorageFlat
+	b.manifest.RepoPath = ""
+}
+
+// SetModTimes records each file's modification time (by file name) in a flat
+// manifest; see ManifestFile.ModTime.
+func (b *ManifestBuilder) SetModTimes(mtimes map[string]int64) {
+	for i := range b.manifest.Files {
+		b.manifest.Files[i].ModTime = mtimes[b.manifest.Files[i].Name]
+	}
+}
+
 // AddFile adds a file to the manifest.
 func (b *ManifestBuilder) AddFile(name, blobHash string, size int64, isLFS bool) {
 	b.manifest.Files = append(b.manifest.Files, ManifestFile{
@@ -133,8 +158,27 @@ func (m *DownloadManifest) Write(friendlyPath string) (string, error) {
 	header += "# Run 'hfdownloader list' to see all downloaded repos\n\n"
 	content := header + string(data)
 
-	if err := os.WriteFile(manifestPath, []byte(content), 0o644); err != nil {
+	// Write a temp file and rename it into place: if the friendly view has a
+	// link at this path (a repo with its own hfd.yaml), the link is replaced
+	// instead of written through, which would overwrite the cached file.
+	tmp, err := os.CreateTemp(friendlyPath, ManifestFilename+".*.tmp")
+	if err != nil {
 		return "", fmt.Errorf("write manifest: %w", err)
+	}
+	_, werr := tmp.WriteString(content)
+	cerr := tmp.Close()
+	if werr == nil {
+		werr = cerr
+	}
+	if werr == nil {
+		werr = os.Chmod(tmp.Name(), 0o644)
+	}
+	if werr == nil {
+		werr = os.Rename(tmp.Name(), manifestPath)
+	}
+	if werr != nil {
+		os.Remove(tmp.Name())
+		return "", fmt.Errorf("write manifest: %w", werr)
 	}
 
 	return manifestPath, nil

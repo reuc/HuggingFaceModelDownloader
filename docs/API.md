@@ -627,7 +627,7 @@ Analyze a HuggingFace repository.
   "type_description": "GGUF Model",
   "file_count": 12,
   "total_size": 4500000000,
-  "total_size_human": "4.2 GiB",
+  "total_size_human": "4.5 GB",
   "commit": "41b61a33a2483885c981aa79e0df6b32407ed873",
   "branch": "main",
   "refs": [
@@ -638,7 +638,7 @@ Analyze a HuggingFace repository.
       "path": "config.json",
       "name": "config.json",
       "size": 1024,
-      "size_human": "1.0 KiB",
+      "size_human": "1.0 kB",
       "is_lfs": false,
       "directory": "."
     },
@@ -646,7 +646,7 @@ Analyze a HuggingFace repository.
       "path": "mistral-7b.Q4_K_M.gguf",
       "name": "mistral-7b.Q4_K_M.gguf",
       "size": 4368438272,
-      "size_human": "4.1 GiB",
+      "size_human": "4.4 GB",
       "is_lfs": true,
       "sha256": "abc123...",
       "directory": "."
@@ -661,7 +661,7 @@ Analyze a HuggingFace repository.
         "quality": 4,
         "quality_stars": "★★★★☆",
         "estimated_ram": 4905066496,
-        "estimated_ram_human": "4.6 GiB",
+        "estimated_ram_human": "4.9 GB",
         "description": "Good balance of quality and size"
       }
     ]
@@ -730,7 +730,7 @@ only size).
   "precision": "GGUF (24 quants)",
   "precision_detail": "F16, IQ2_M, IQ3_M, ...",
   "size": 121058967173,
-  "size_human": "112.7 GiB",
+  "size_human": "121.1 GB",
   "file_count": 27
 }
 ```
@@ -823,7 +823,7 @@ List cached repositories.
       "path": "/home/user/.cache/huggingface/hub/models--TheBloke--Mistral-7B-Instruct-v0.2-GGUF",
       "friendlyPath": "/home/user/.cache/huggingface/models/TheBloke/Mistral-7B-Instruct-v0.2-GGUF",
       "size": 4368439584,
-      "sizeHuman": "4.1 GiB",
+      "sizeHuman": "4.4 GB",
       "fileCount": 4,
       "branch": "main",
       "commit": "41b61a3",
@@ -845,7 +845,7 @@ List cached repositories.
     "totalModels": 1,
     "totalDatasets": 0,
     "totalSize": 4368439584,
-    "totalSizeHuman": "4.1 GiB",
+    "totalSizeHuman": "4.4 GB",
     "totalFiles": 4
   },
   "cacheDir": "/home/user/.cache/huggingface"
@@ -897,7 +897,7 @@ then a dataset with the same name.
   "path": "/home/user/.cache/huggingface/hub/models--TheBloke--Mistral-7B-Instruct-v0.2-GGUF",
   "friendlyPath": "/home/user/.cache/huggingface/models/TheBloke/Mistral-7B-Instruct-v0.2-GGUF",
   "size": 4368439584,
-  "sizeHuman": "4.1 GiB",
+  "sizeHuman": "4.4 GB",
   "fileCount": 4,
   "branch": "main",
   "commit": "41b61a3",
@@ -905,7 +905,7 @@ then a dataset with the same name.
   "snapshots": ["41b61a33a2483885c981aa79e0df6b32407ed873"],
   "files": [
     { "name": "config.json", "size": 31, "sizeHuman": "31 B", "isLfs": false },
-    { "name": "mistral-7b-instruct-v0.2.Q4_K_M.gguf", "size": 4368439296, "sizeHuman": "4.1 GiB", "isLfs": true }
+    { "name": "mistral-7b-instruct-v0.2.Q4_K_M.gguf", "size": 4368439296, "sizeHuman": "4.4 GB", "isLfs": true }
   ],
   "manifest": { /* as in GET /api/cache */ }
 }
@@ -984,6 +984,42 @@ Response `200 OK`:
 `fromBlobs` (exported from a cache without snapshot links) and `missingBlob`
 are included only when set. Errors: `400` (export disabled, invalid body or
 repo id), `404` (repo/revision not in the cache), `500` (other failures).
+
+#### POST /api/cache/flatten
+
+Convert a cached repo to real files in `models/<owner>/<name>` (or
+`datasets/...`) and delete its `hub/` entry, like CLI `flatten`. Nothing is
+downloaded. The web UI's **Convert to real files** button calls this.
+
+Request body (`type` defaults to `model`; `revision` defaults to the last
+downloaded one, else `main`; `force` also deletes other cached revisions and
+unfinished downloads):
+
+```json
+{ "repo": "TheBloke/Mistral-7B-Instruct-v0.2-GGUF", "type": "model", "force": false }
+```
+
+Response `200 OK`:
+
+```json
+{ "repo": "TheBloke/Mistral-7B-Instruct-v0.2-GGUF", "commit": "41b61a3...",
+  "path": "/cache/models/TheBloke/Mistral-7B-Instruct-v0.2-GGUF", "files": 4, "bytes": 4368439584 }
+```
+
+`droppedRevisions` lists deleted revisions when `force` removed any.
+
+Without `force`, a repo that has other revisions or partial download files
+cached returns `409`, and nothing changes:
+
+```json
+{ "error": "Other revisions cached", "details": "...", "commit": "41b61a3...",
+  "otherRevisions": ["9f2c1d0..."], "partialFiles": 0 }
+```
+
+Other errors: `409` while the repo has a `queued`, `running` or `paused` job
+(or another process is writing to it), `400` (invalid body, repo id or
+revision; or the repo is already flat), `404` (not in the cache), `500`
+(other failures).
 
 #### DELETE /api/cache/{repo}
 
