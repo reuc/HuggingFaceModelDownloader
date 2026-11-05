@@ -312,17 +312,17 @@ func shortCommit(commit string) string {
 
 func humanSize(bytes int64) string {
 	const (
-		KB = 1024
-		MB = KB * 1024
-		GB = MB * 1024
+		KB = 1000
+		MB = KB * 1000
+		GB = MB * 1000
 	)
 	switch {
 	case bytes >= GB:
-		return fmt.Sprintf("%.1f GiB", float64(bytes)/GB)
+		return fmt.Sprintf("%.1f GB", float64(bytes)/GB)
 	case bytes >= MB:
-		return fmt.Sprintf("%.1f MiB", float64(bytes)/MB)
+		return fmt.Sprintf("%.1f MB", float64(bytes)/MB)
 	case bytes >= KB:
-		return fmt.Sprintf("%.1f KiB", float64(bytes)/KB)
+		return fmt.Sprintf("%.1f kB", float64(bytes)/KB)
 	default:
 		return fmt.Sprintf("%d B", bytes)
 	}

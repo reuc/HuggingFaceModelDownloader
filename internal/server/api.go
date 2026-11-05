@@ -1535,7 +1535,7 @@ func splitCommand(command string) []string {
 
 // humanSizeBytes converts bytes to human-readable format.
 func humanSizeBytes(b int64) string {
-	const unit = 1024
+	const unit = 1000
 	if b < unit {
 		return fmt.Sprintf("%d B", b)
 	}
@@ -1544,5 +1544,5 @@ func humanSizeBytes(b int64) string {
 		div *= unit
 		exp++
 	}
-	return fmt.Sprintf("%.1f %ciB", float64(b)/float64(div), "KMGTPE"[exp])
+	return fmt.Sprintf("%.1f %cB", float64(b)/float64(div), "kMGTPE"[exp])
 }

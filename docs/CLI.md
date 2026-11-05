@@ -382,7 +382,7 @@ Output varies by detected type; for a small Transformers repo:
 Repository: hf-internal-testing/tiny-random-gpt2
 Type:       transformers (Transformers model (safetensors))
 Files:      10
-Total Size: 11.9 MiB
+Total Size: 12.5 MB
 
 Model Configuration:
   Vocab Size:      1000
@@ -391,8 +391,8 @@ Model Configuration:
 Weight Files:
   NAME                                                   SIZE  FORMAT
   ---------------------------------------------  ------------  ------
-  model.safetensors                                 443.2 KiB  safetensors
-  pytorch_model.bin                                   3.4 MiB  pytorch_bin
+  model.safetensors                                  453.8 kB  safetensors
+  pytorch_model.bin                                    3.6 MB  pytorch_bin
 ...
 Download Commands:
   Full:        hfdownloader download hf-internal-testing/tiny-random-gpt2
@@ -440,13 +440,13 @@ hfdownloader list --scan
 
 #### Sample Output
 
-Sizes are shown in binary units (B, KiB, MiB, GiB).
+Sizes are shown in decimal units (B, kB, MB, GB; 1 GB = 1,000,000,000 bytes).
 
 ```
 TYPE     REPO                                    COMMIT   DOWNLOADED  FILES        SIZE  BRANCH
 -------  --------------------------------------  -------  ----------  -----  ----------  ------
-model    TheBloke/Mistral-7B-Instruct-v0.2-GGUF  41b61a3  2024-01-15      4     4.1 GiB  main
-dataset  facebook/flores                         7d4c3b1  2024-01-10     12   128.0 MiB  main
+model    TheBloke/Mistral-7B-Instruct-v0.2-GGUF  41b61a3  2024-01-15      4      4.4 GB  main
+dataset  facebook/flores                         7d4c3b1  2024-01-10     12    134.2 MB  main
 
 Total: 2 repos
 (Use --scan to include repos without manifests)
@@ -484,7 +484,7 @@ hfdownloader info Mistral-7B --format json
 
 #### Sample Output
 
-Sizes are shown in binary units (B, KiB, MiB, GiB). A partial name must match
+Sizes are shown in decimal units (B, kB, MB, GB; 1 GB = 1,000,000,000 bytes). A partial name must match
 exactly one downloaded repo.
 
 ```
@@ -493,7 +493,7 @@ Type:       model
 Branch:     main
 Commit:     41b61a33a2483885c981aa79e0df6b32407ed873
 Files:      3
-Size:       4.1 GiB
+Size:       4.4 GB
 Downloaded: 2024-01-15 10:30:45
 
 Friendly path: /home/user/.cache/huggingface/models/TheBloke/Mistral-7B-Instruct-v0.2-GGUF
@@ -504,9 +504,9 @@ Command: hfdownloader download TheBloke/Mistral-7B-Instruct-v0.2-GGUF -F q4_k_m
 Files:
   NAME                                                      SIZE  LFS
   --------------------------------------------------  ----------  ---
-  config.json                                              1.2 KiB
-  mistral-7b-instruct-v0.2.Q4_K_M.gguf                     4.1 GiB  yes
-  README.md                                                8.5 KiB
+  config.json                                               1.2 kB
+  mistral-7b-instruct-v0.2.Q4_K_M.gguf                      4.4 GB  yes
+  README.md                                                 8.7 kB
 ```
 
 ---
