@@ -36,6 +36,7 @@ func newServeCmd(ro *RootOpts) *cobra.Command {
 		allowOrigins       []string
 		linkMode           string
 		flatten            bool
+		convertOnBoot      bool
 		exportDir          string
 		mirrorDir          string
 		jobsFile           string
@@ -77,6 +78,7 @@ web app on a different origin needs to call the API.`,
 				AllowedOrigins: allowOrigins,
 				LinkMode:       linkMode,
 				Flatten:        flatten,
+				ConvertOnBoot:  convertOnBoot,
 				ExportDir:      exportDir,
 				MirrorDir:      mirrorDir,
 				Version:        cmd.Root().Version, // injected build version (ldflags)
@@ -93,6 +95,9 @@ web app on a different origin needs to call the API.`,
 			// config file, like every other flag.
 			if cmd.Flags().Changed("flatten") {
 				cfg.Flatten = flatten
+			}
+			if cmd.Flags().Changed("convert-on-boot") {
+				cfg.ConvertOnBoot = convertOnBoot
 			}
 			// --auth-user alone used to enable auth with an empty password, and
 			// --auth-pass alone silently left auth off.
@@ -188,6 +193,7 @@ web app on a different origin needs to call the API.`,
 	// Storage
 	cmd.Flags().StringVar(&linkMode, "link-mode", "", "How cache entries refer to downloaded data: auto (symlink, else hardlink, else copy), symlink, hardlink, copy")
 	cmd.Flags().BoolVar(&flatten, "flatten", false, "When a download completes, move its files into models/ (or datasets/) as real files and remove the repo from hub/")
+	cmd.Flags().BoolVar(&convertOnBoot, "convert-on-boot", false, "At startup, convert every completed download in hub/ to real files in models/ (or datasets/), like `flatten --all`; use with --flatten")
 	cmd.Flags().StringVar(&exportDir, "export-dir", "", "Enable \"Export as real files\" in the web UI, writing to <export-dir>/<owner>/<name>")
 	cmd.Flags().StringVar(&jobsFile, "jobs-file", "", "Where to save the download queue so it resumes after a restart (default: ~/.config/hfdownloader/jobs.json; \"off\" disables)")
 	cmd.Flags().StringVar(&mirrorDir, "mirror-dir", "", "Allow the web UI to add mirror targets, but only inside this directory (targets added with `mirror target add` work regardless)")

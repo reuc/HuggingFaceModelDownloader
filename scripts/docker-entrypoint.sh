@@ -19,6 +19,11 @@
 #              `serve --flatten`). Boolean like SSH_ENABLE. When set (true or
 #              false) it overrides `flatten` in the config file; unset leaves
 #              the config file's value (default false).
+#   CONVERT_ON_BOOT
+#              At startup, convert every completed download already in hub/
+#              to real files in models/ (or datasets/), like
+#              `hfdownloader flatten --all` (same as `serve --convert-on-boot`).
+#              Use with FLATTEN=true. Boolean, set/unset like FLATTEN.
 #
 # Flags passed explicitly on the command line always win over these variables.
 # =============================================================================
@@ -43,6 +48,7 @@ HTTP_PORT="${HTTP_PORT:-}"
 SSH_PORT="${SSH_PORT:-}"
 SSH_ENABLE="${SSH_ENABLE:-false}"
 FLATTEN="${FLATTEN:-}"
+CONVERT_ON_BOOT="${CONVERT_ON_BOOT:-}"
 
 # parse_bool <NAME> <value>: prints true or false, or dies.
 parse_bool() {
@@ -54,6 +60,7 @@ parse_bool() {
 }
 SSH_ENABLE=$(parse_bool SSH_ENABLE "$SSH_ENABLE")
 [ -n "$FLATTEN" ] && FLATTEN=$(parse_bool FLATTEN "$FLATTEN")
+[ -n "$CONVERT_ON_BOOT" ] && CONVERT_ON_BOOT=$(parse_bool CONVERT_ON_BOOT "$CONVERT_ON_BOOT")
 
 if [ -n "$AUTH_USER" ] && [ -z "$AUTH_PASS" ]; then die "AUTH_USER is set but AUTH_PASS is empty"; fi
 if [ -z "$AUTH_USER" ] && [ -n "$AUTH_PASS" ]; then die "AUTH_PASS is set but AUTH_USER is empty"; fi
@@ -147,6 +154,9 @@ if [ "${1:-}" = serve ]; then
 	fi
 	if [ -n "$FLATTEN" ] && ! has_flag --flatten "" -- "$@"; then
 		set -- "--flatten=$FLATTEN" "$@"
+	fi
+	if [ -n "$CONVERT_ON_BOOT" ] && ! has_flag --convert-on-boot "" -- "$@"; then
+		set -- "--convert-on-boot=$CONVERT_ON_BOOT" "$@"
 	fi
 	set -- serve "$@"
 fi

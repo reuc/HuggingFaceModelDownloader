@@ -44,6 +44,10 @@ type Config struct {
 	// Flatten moves each finished download out of hub/ into models/ or
 	// datasets/ as real files (hfdownloader.Settings.Flatten).
 	Flatten bool
+	// ConvertOnBoot converts every completed download already in hub/ to
+	// real files (like `hfdownloader flatten --all`) when the server starts,
+	// before restored jobs resume. See Server.convertOnBoot.
+	ConvertOnBoot bool
 	// ExportDir enables "Export as real files" in the web UI: exports are
 	// written to <ExportDir>/<owner>/<name>. Empty disables exporting from
 	// the web, so the API can't be used to write files anywhere else.
@@ -142,6 +146,13 @@ func (s *Server) settingsConfig() Config {
 func (s *Server) ListenAndServe(ctx context.Context) error {
 	// Start WebSocket hub
 	go s.wsHub.Run()
+
+	// Convert completed downloads to real files first: no download is
+	// running yet and the API isn't up, so nothing can write to hub/ while
+	// repos are moved out of it.
+	if s.config.ConvertOnBoot {
+		s.convertOnBoot()
+	}
 
 	// Resume downloads restored from the saved job list.
 	s.jobs.Start()
