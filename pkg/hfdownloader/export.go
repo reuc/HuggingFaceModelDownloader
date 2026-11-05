@@ -73,17 +73,23 @@ func (r *RepoDir) Export(dest string, opts ExportOptions) (*ExportResult, error)
 		mode = LinkCopy
 	}
 
-	commit, err := r.resolveCommit(opts.Revision)
+	var commit string
+	var entries []exportEntry
+	if r.IsFlat() {
+		// Flat repo (Settings.Flatten): one revision, already real files.
+		commit, entries, err = r.flatEntries(opts.Revision)
+	} else {
+		commit, err = r.resolveCommit(opts.Revision)
+		if err == nil {
+			entries, err = r.snapshotEntries(commit)
+		}
+	}
 	if err != nil {
 		return nil, err
 	}
 	res := &ExportResult{Commit: commit, Dest: dest}
 
-	entries, err := r.snapshotEntries(commit)
-	if err != nil {
-		return nil, err
-	}
-	if len(entries) == 0 {
+	if len(entries) == 0 && !r.IsFlat() {
 		entries, res.MissingBlob, err = r.manifestEntries(commit)
 		if err != nil {
 			return nil, err
@@ -199,6 +205,29 @@ func (r *RepoDir) snapshotEntries(commit string) ([]exportEntry, error) {
 	})
 	sort.Slice(out, func(i, j int) bool { return out[i].rel < out[j].rel })
 	return out, err
+}
+
+// flatEntries lists a flat repo's files for export. A flat repo holds the one
+// revision it was last downloaded at, so any other revision is an error.
+func (r *RepoDir) flatEntries(revision string) (string, []exportEntry, error) {
+	m, err := ReadManifest(filepath.Join(r.FriendlyPath(), ManifestFilename))
+	if err != nil {
+		return "", nil, fmt.Errorf("read manifest: %w", err)
+	}
+	if revision != "" && revision != m.Branch && revision != m.Commit {
+		return "", nil, fmt.Errorf("export: %s is stored flat at %s (%s); revision %q is not available", r.RepoID(), m.Branch, shortCommit(m.Commit), revision)
+	}
+	names, _, _, err := r.FlatFiles()
+	if err != nil {
+		return "", nil, err
+	}
+	root := r.FriendlyPath()
+	out := make([]exportEntry, 0, len(names))
+	for _, n := range names {
+		out = append(out, exportEntry{rel: n, src: filepath.Join(root, filepath.FromSlash(n))})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].rel < out[j].rel })
+	return m.Commit, out, nil
 }
 
 // manifestEntries maps files to blobs using the download manifest, for

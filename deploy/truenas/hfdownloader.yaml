@@ -42,6 +42,8 @@ services:
       AUTH_PASS: "change-me"         # <-- CHANGE
       SSH_ENABLE: "false"            # set "true" to allow scp/sftp/ssh access
       SSH_PORT: "2222"
+      FLATTEN: "false"               # "true": finished downloads become real files in
+                                     # cache/models/<owner>/<name>, removed from cache/hub/
       HF_TOKEN: ""                   # <-- CHANGE (optional) hf_xxx for gated models
 
     ports:

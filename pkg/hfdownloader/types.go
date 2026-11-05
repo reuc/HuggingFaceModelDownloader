@@ -221,6 +221,15 @@ type Settings struct {
 	// This also skips writing the rebuild.sh script since there's nothing to rebuild.
 	NoFriendlyView bool
 
+	// Flatten stores finished downloads only as real files in the friendly
+	// view (models/<owner>/<name>, datasets/<owner>/<name>). Files download
+	// into the HF cache as usual, so interrupted downloads resume; once every
+	// file is complete they are moved out of hub/ and the repo's hub/ entry is
+	// deleted. Python libraries then load the repo from its folder path
+	// instead of by repo id. A later download of the same repo skips files
+	// that are already there unchanged. Can't be combined with NoFriendlyView.
+	Flatten bool
+
 	// Command is the CLI command string used to initiate this download.
 	// If set, it will be included in the manifest file (hfd.yaml).
 	// The token is automatically stripped from the command for security.

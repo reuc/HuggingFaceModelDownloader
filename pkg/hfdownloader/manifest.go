@@ -28,7 +28,11 @@ type DownloadManifest struct {
 	Repo     string `yaml:"repo" json:"repo"`           // "owner/name"
 	Branch   string `yaml:"branch" json:"branch"`       // Branch name (usually "main")
 	Commit   string `yaml:"commit" json:"commit"`       // Commit hash
-	RepoPath string `yaml:"repo_path" json:"repo_path"` // Relative path to hub cache (e.g., "hub/models--owner--repo")
+	RepoPath string `yaml:"repo_path" json:"repo_path"` // Relative path to hub cache (e.g., "hub/models--owner--repo"); empty when flat
+	// Storage is "flat" (StorageFlat) when the files in this directory are
+	// the real data and the repo has no hub/ entry (Settings.Flatten). Empty
+	// means the usual HF cache layout, where this directory holds links.
+	Storage string `yaml:"storage,omitempty" json:"storage,omitempty"`
 
 	// Timing
 	StartedAt   time.Time `yaml:"started_at" json:"started_at"`     // When download started
@@ -92,6 +96,15 @@ func NewManifestBuilder(job Job, command string) *ManifestBuilder {
 // SetCommit sets the commit hash.
 func (b *ManifestBuilder) SetCommit(commit string) {
 	b.manifest.Commit = commit
+}
+
+// SetFlat records that the download is stored flat (Settings.Flatten): the
+// friendly view holds the real files and there is no hub/ entry. Blob entries
+// still name each file's content hash, which the next download uses to skip
+// unchanged files.
+func (b *ManifestBuilder) SetFlat() {
+	b.manifest.Storage = StorageFlat
+	b.manifest.RepoPath = ""
 }
 
 // AddFile adds a file to the manifest.

@@ -1366,6 +1366,10 @@
         badge.textContent = `Storage: local files → ${s.localDir}`;
         badge.title = 'Server started with --local-dir: downloads are saved as real files (not HF cache). They will not appear in the Cache browser.';
         badge.classList.add('storage-mode-local');
+      } else if (s.flatten) {
+        badge.textContent = `Storage: real files → ${s.cacheDir}/models, ${s.cacheDir}/datasets`;
+        badge.title = 'Server started with --flatten (FLATTEN=true): files download into the HF cache, then move to models/<owner>/<name> (or datasets/) as real files once the download completes, and the hub/ entry is removed. Load them in Python by folder path.';
+        badge.classList.add('storage-mode-local');
       } else {
         badge.textContent = `Storage: HF cache → ${s.cacheDir}`;
         badge.title = 'Downloads use the HuggingFace cache layout. Start the server with --local-dir to save real files instead.';

@@ -191,6 +191,7 @@ func newDownloadCmd(ctx context.Context, ro *RootOpts) *cobra.Command {
 	cmd.Flags().StringVar(&cfg.Endpoint, "endpoint", "", "Custom HuggingFace endpoint URL (e.g. https://hf-mirror.com)")
 	cmd.Flags().BoolVar(&cfg.NoManifest, "no-manifest", false, "Do not write hfd.yaml manifest file after download")
 	cmd.Flags().BoolVar(&cfg.NoFriendlyView, "no-friendly", false, "Do not create friendly view symlinks (models/, datasets/)")
+	cmd.Flags().BoolVar(&cfg.Flatten, "flatten", false, "When the download completes, move the files into models/ (or datasets/) as real files and remove the repo from hub/")
 	cmd.Flags().BoolVar(&legacy, "legacy", false, "Use flat directory structure (v2.x behavior); pair with -o to choose the directory")
 	cmd.Flags().StringVarP(&legacyOutput, "output", "o", "", "Output directory for --legacy mode (default: Models/ or Datasets/)")
 	cmd.Flags().StringVar(&localDir, "local-dir", "", "Download real files (not HF cache symlinks) into this directory, like `huggingface-cli download --local-dir`")
@@ -466,6 +467,7 @@ func applySettingsDefaults(cmd *cobra.Command, ro *RootOpts, dst *hfdownloader.S
 	setStr("stall-timeout", func(v string) { dst.StallTimeout = v })
 	setStr("link-mode", func(v string) { dst.LinkMode = v })
 	setStr("endpoint", func(v string) { dst.Endpoint = v })
+	setStr("flatten", func(v string) { dst.Flatten = v == "true" })
 
 	if !cmd.Flags().Changed("token") && os.Getenv("HF_TOKEN") == "" {
 		if v, ok := cfg["token"]; ok && v != nil {

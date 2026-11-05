@@ -14,6 +14,9 @@
 #              Requires AUTH_USER and AUTH_PASS, and the container must
 #              start as root (the image default).
 #   SSH_PORT   Port for the SSH server when SSH_ENABLE is true. Default 22.
+#   FLATTEN    When a download completes, move its files into models/ (or
+#              datasets/) as real files and remove it from hub/ (same as
+#              `serve --flatten`). Boolean like SSH_ENABLE. Default false.
 #
 # Flags passed explicitly on the command line always win over these variables.
 # =============================================================================
@@ -37,12 +40,18 @@ AUTH_PASS="${AUTH_PASS:-}"
 HTTP_PORT="${HTTP_PORT:-}"
 SSH_PORT="${SSH_PORT:-}"
 SSH_ENABLE="${SSH_ENABLE:-false}"
+FLATTEN="${FLATTEN:-false}"
 
-case "$(echo "$SSH_ENABLE" | tr '[:upper:]' '[:lower:]')" in
-	1 | true | yes | on) SSH_ENABLE=true ;;
-	0 | false | no | off | '') SSH_ENABLE=false ;;
-	*) die "SSH_ENABLE must be true or false, got '$SSH_ENABLE'" ;;
-esac
+# parse_bool <NAME> <value>: prints true or false, or dies.
+parse_bool() {
+	case "$(echo "$2" | tr '[:upper:]' '[:lower:]')" in
+		1 | true | yes | on) echo true ;;
+		0 | false | no | off | '') echo false ;;
+		*) die "$1 must be true or false, got '$2'" ;;
+	esac
+}
+SSH_ENABLE=$(parse_bool SSH_ENABLE "$SSH_ENABLE")
+FLATTEN=$(parse_bool FLATTEN "$FLATTEN")
 
 if [ -n "$AUTH_USER" ] && [ -z "$AUTH_PASS" ]; then die "AUTH_USER is set but AUTH_PASS is empty"; fi
 if [ -z "$AUTH_USER" ] && [ -n "$AUTH_PASS" ]; then die "AUTH_PASS is set but AUTH_USER is empty"; fi
@@ -133,6 +142,9 @@ if [ "${1:-}" = serve ]; then
 	fi
 	if [ -n "$AUTH_USER" ] && ! has_flag --auth-user "" -- "$@" && ! has_flag --auth-pass "" -- "$@"; then
 		set -- --auth-user "$AUTH_USER" --auth-pass "$AUTH_PASS" "$@"
+	fi
+	if [ "$FLATTEN" = true ] && ! has_flag --flatten "" -- "$@"; then
+		set -- --flatten "$@"
 	fi
 	set -- serve "$@"
 fi

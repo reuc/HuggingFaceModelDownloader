@@ -252,6 +252,47 @@ downloads like normal folders.
 > Caches written by older Windows builds (files only in `blobs/`) are
 > repaired by `hfdownloader rebuild`.
 
+### Flattened storage: real files in `models/` only
+
+```bash
+hfdownloader download TheBloke/Mistral-7B-Instruct-v0.2-GGUF --flatten
+hfdownloader serve --flatten          # every download in the web UI; Docker: FLATTEN=true
+```
+
+Files download into `hub/` as usual, so an interrupted download resumes.
+When **every** file is complete, they are moved into
+`models/<owner>/<name>/` (or `datasets/...`) as real files — not links — and
+the repo's `hub/` entry is deleted, so each file is stored exactly once, as
+plain data you can open over SMB/NFS or copy anywhere:
+
+```
+~/.cache/huggingface/
+└── models/
+    └── TheBloke/
+        └── Mistral-7B-Instruct-v0.2-GGUF/
+            ├── mistral-7b-instruct-v0.2.Q4_K_M.gguf   # the real file
+            └── hfd.yaml                               # storage: flat
+```
+
+Downloading the same repo again (or after the branch moved) only fetches new
+or changed files; unchanged ones already in the folder are kept. The web UI
+Cache browser, `list`, `info`, `export` and delete all work on flattened repos.
+
+**Python:** there is no `hub/` entry, so load a flattened repo by its folder
+path instead of its repo id — Transformers, Diffusers, llama.cpp and
+`huggingface_hub` all accept a local directory:
+
+```python
+from transformers import AutoModelForCausalLM, AutoTokenizer
+
+path = "/home/user/.cache/huggingface/models/Qwen/Qwen2.5-0.5B-Instruct"
+model = AutoModelForCausalLM.from_pretrained(path)
+tokenizer = AutoTokenizer.from_pretrained(path)
+```
+
+Trade-offs: only the last downloaded revision of a repo is kept, and files a
+newer commit deleted stay in the folder until you remove them.
+
 ### Export: plain files from what you already downloaded
 
 Need real files for LM Studio, Ollama or llama.cpp but already downloaded
@@ -519,6 +560,7 @@ docker run --rm -v ~/.cache/huggingface:/home/hfdownloader/.cache/huggingface \
 | `AUTH_PASS` | unset | Basic-auth password for `serve`, and the SSH password |
 | `SSH_ENABLE` | `false` | Start an SSH/SFTP server in the container (`true`/`false`) |
 | `SSH_PORT` | `22` | SSH server port, used only when `SSH_ENABLE=true` |
+| `FLATTEN` | `false` | Store finished downloads only as real files in `models/` / `datasets/` (same as `serve --flatten`) |
 
 `AUTH_USER` and `AUTH_PASS` must be set together, and `SSH_ENABLE` requires both.
 Flags passed on the command line override these variables.

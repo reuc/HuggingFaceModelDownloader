@@ -35,6 +35,7 @@ func newServeCmd(ro *RootOpts) *cobra.Command {
 		authPass           string
 		allowOrigins       []string
 		linkMode           string
+		flatten            bool
 		exportDir          string
 		mirrorDir          string
 		jobsFile           string
@@ -75,6 +76,7 @@ web app on a different origin needs to call the API.`,
 				AuthPass:       authPass,
 				AllowedOrigins: allowOrigins,
 				LinkMode:       linkMode,
+				Flatten:        flatten,
 				ExportDir:      exportDir,
 				MirrorDir:      mirrorDir,
 				Version:        cmd.Root().Version, // injected build version (ldflags)
@@ -180,6 +182,7 @@ web app on a different origin needs to call the API.`,
 
 	// Storage
 	cmd.Flags().StringVar(&linkMode, "link-mode", "", "How cache entries refer to downloaded data: auto (symlink, else hardlink, else copy), symlink, hardlink, copy")
+	cmd.Flags().BoolVar(&flatten, "flatten", false, "When a download completes, move its files into models/ (or datasets/) as real files and remove the repo from hub/")
 	cmd.Flags().StringVar(&exportDir, "export-dir", "", "Enable \"Export as real files\" in the web UI, writing to <export-dir>/<owner>/<name>")
 	cmd.Flags().StringVar(&jobsFile, "jobs-file", "", "Where to save the download queue so it resumes after a restart (default: ~/.config/hfdownloader/jobs.json; \"off\" disables)")
 	cmd.Flags().StringVar(&mirrorDir, "mirror-dir", "", "Allow the web UI to add mirror targets, but only inside this directory (targets added with `mirror target add` work regardless)")

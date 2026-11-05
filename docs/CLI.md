@@ -152,6 +152,7 @@ The `download` subcommand is required: `hfdownloader owner/name` fails with
 | `--endpoint` | | string | `https://huggingface.co` | Custom endpoint (mirrors) |
 | `--no-manifest` | | bool | `false` | Don't write hfd.yaml manifest |
 | `--no-friendly` | | bool | `false` | Don't create friendly symlinks |
+| `--flatten` | | bool | `false` (config `flatten`) | When the download completes, move the files into `models/<owner>/<name>` (or `datasets/`) as real files and remove the repo from `hub/`. See [Flattened storage](../README.md#flattened-storage-real-files-in-models-only) |
 | `--dry-run` | | bool | `false` | Plan only, no download |
 | `--plan-format` | | string | `table` | Plan format: table, json (`--json` also prints JSON) |
 
@@ -273,6 +274,7 @@ hfdownloader serve [flags]
 | `--auth-pass` | | string | | Basic auth password (must be used with `--auth-user`) |
 | `--allow-origin` | | strings | | Extra browser origin allowed to call the API (repeatable; `*` allows any). Other origins get 403 |
 | `--export-dir` | | string | | Enable "Export as real files" in the web UI, writing to `<export-dir>/<owner>/<name>` |
+| `--flatten` | | bool | config `flatten`, else `false` | Store every finished download only as real files in `models/` / `datasets/` (no `hub/` entry); Docker: `FLATTEN=true` |
 | `--mirror-dir` | | string | | Allow the web UI to add/remove mirror targets, but only inside this directory. Without it, targets can only be registered on the server with `mirror target add`; the API never accepts raw paths |
 | `--link-mode` | | string | config `link-mode`, else `auto` | Link mode for downloads: `auto`, `symlink`, `hardlink`, `copy` (see `download`) |
 | `--models-dir` | | string | `./Models` | Legacy models directory |
@@ -998,7 +1000,7 @@ Configuration is loaded from the first of:
 4. `~/.config/hfdownloader.yml`
 
 Command-line flags always win over the file. Besides the keys below, the file
-may hold `cache-dir`, `stall-timeout`, `link-mode` and (for `serve`)
+may hold `cache-dir`, `stall-timeout`, `link-mode`, `flatten` (true/false) and (for `serve`)
 `export-dir` and `mirror-dir`. Saving settings in the web UI rewrites only the keys it manages
 (`token`, `connections`, `max-active`, `multipart-threshold`, `verify`,
 `retries`, `endpoint`, `proxy`) and keeps everything else.

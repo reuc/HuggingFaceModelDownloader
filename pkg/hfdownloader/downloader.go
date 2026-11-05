@@ -204,6 +204,23 @@ func Download(ctx context.Context, job Job, cfg Settings, progress ProgressFunc)
 	var skippedCount int64
 	var downloadedCount int64
 
+	// Flatten: every finished file, to move into the friendly view at the
+	// end, and the files an earlier flat download left there.
+	flatten := useHFCache && cfg.Flatten
+	var flatFiles []flatFile
+	var flatMu sync.Mutex
+	var prevFlat map[string]ManifestFile
+	if flatten {
+		prevFlat = repoDir.flatManifestFiles()
+	}
+	addFlat := func(rel, sha string, keep bool) {
+		if flatten {
+			flatMu.Lock()
+			flatFiles = append(flatFiles, flatFile{rel: rel, sha: sha, keep: keep})
+			flatMu.Unlock()
+		}
+	}
+
 	// Build manifest during download (thread-safe)
 	// Manifest is always written unless explicitly disabled with NoManifest
 	var manifestBuilder *ManifestBuilder
@@ -265,10 +282,18 @@ LOOP:
 			var dst string
 			var skipCheck func() (bool, string, error)
 			reusedSHA := it.SHA256 // blob of a skipped file, for the manifest
+			keepFlat := false      // already a real file in the friendly view
 
 			if useHFCache {
 				// HF Cache mode: check blob existence
 				skipCheck = func() (bool, string, error) {
+					if flatten {
+						if sha, ok := repoDir.flatFileCurrent(finalRel, it, prevFlat); ok {
+							reusedSHA = sha
+							keepFlat = true
+							return true, "already in place", nil
+						}
+					}
 					if it.SHA256 != "" {
 						status, _, err := repoDir.CheckBlob(it.SHA256)
 						if err != nil {
@@ -338,6 +363,7 @@ LOOP:
 				if _, loaded := skipOnce.LoadOrStore(finalRel, struct{}{}); !loaded {
 					emit(ProgressEvent{Event: "file_done", Path: finalRel, Message: "skip (" + reason + ")"})
 					atomic.AddInt64(&skippedCount, 1)
+					addFlat(finalRel, reusedSHA, keepFlat)
 					// Add to manifest (skipped files are still part of the download job)
 					if manifestBuilder != nil {
 						manifestMu.Lock()
@@ -411,6 +437,7 @@ LOOP:
 				if it.GitOID != "" {
 					oidBlobs.Store(it.GitOID, finalSHA256)
 				}
+				addFlat(finalRel, finalSHA256, false)
 			} else {
 				finalSHA256 = it.SHA256
 			}
@@ -476,11 +503,39 @@ LOOP:
 		}
 	}
 
+	// Flatten: move the finished files out of hub/ into the friendly view.
+	// This happens only after every file is complete, so an interrupted or
+	// failed download keeps its partial data in hub/ and resumes.
+	if flatten {
+		emit(ProgressEvent{Event: "flatten", Message: "moving files to " + repoDir.FriendlyPath()})
+		if err := repoDir.placeFlatFiles(flatFiles); err != nil {
+			err = fmt.Errorf("move files to %s: %w", repoDir.FriendlyPath(), err)
+			emit(ProgressEvent{Level: "error", Event: "error", Message: err.Error()})
+			return err
+		}
+		if manifestBuilder != nil {
+			manifestBuilder.SetFlat()
+		}
+	}
+
 	// Write manifest file (hfd.yaml) if using HF cache (unless friendly view disabled)
 	if manifestBuilder != nil && repoDir != nil && !cfg.NoFriendlyView {
 		manifest := manifestBuilder.Build()
 		if _, err := manifest.Write(repoDir.FriendlyPath()); err != nil {
 			emit(ProgressEvent{Level: "warn", Event: "warning", Message: fmt.Sprintf("failed to write manifest: %v", err)})
+		}
+	}
+
+	// With the files and the manifest in place, the hub/ entry is no longer
+	// needed. A download of the same repo still running in another process
+	// keeps it (and its partial data) until that one finishes.
+	if flatten {
+		removed, err := repoDir.removeHubEntry(hfCache.StaleTimeout)
+		switch {
+		case err != nil:
+			emit(ProgressEvent{Level: "warn", Event: "warning", Message: fmt.Sprintf("files are in %s, but could not remove %s: %v", repoDir.FriendlyPath(), repoDir.Path(), err)})
+		case !removed:
+			emit(ProgressEvent{Level: "warn", Event: "warning", Message: fmt.Sprintf("files are in %s; kept %s because another download is still writing to it", repoDir.FriendlyPath(), repoDir.Path())})
 		}
 	}
 

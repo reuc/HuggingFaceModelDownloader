@@ -73,6 +73,9 @@ type SettingsResponse struct {
 	MirrorDir string `json:"mirrorDir,omitempty"`
 	// LinkMode is how cache entries refer to downloaded data.
 	LinkMode string `json:"linkMode,omitempty"`
+	// Flatten: finished downloads are moved out of hub/ into models/ or
+	// datasets/ as real files.
+	Flatten bool `json:"flatten,omitempty"`
 	// Proxy settings
 	Proxy *ProxySettingsResponse `json:"proxy,omitempty"`
 	// Config file paths
@@ -422,6 +425,7 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 		ExportDir:          cfg.ExportDir,
 		MirrorDir:          cfg.MirrorDir,
 		LinkMode:           cfg.LinkMode,
+		Flatten:            cfg.Flatten,
 		ConfigFile:         ConfigPath(),
 		TargetsFile:        hfdownloader.DefaultTargetsPath(),
 	}
@@ -850,6 +854,11 @@ func (s *Server) handleCacheList(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "Failed to list cache", err.Error())
 		return
 	}
+	// Repos stored flat (serve --flatten) have no hub/ entry, only real files
+	// in models/ or datasets/.
+	if flatRepos, err := cache.ListFlatRepos(); err == nil {
+		repoDirs = append(repoDirs, flatRepos...)
+	}
 
 	var repos []CachedRepoInfo
 	var stats CacheStats
@@ -873,17 +882,25 @@ func (s *Server) handleCacheList(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		// Get size by walking blobs directory
+		// Get size by walking blobs directory (or, for a flat repo, its files)
 		blobsDir := rd.BlobsDir()
+		repoPath := rd.Path()
 		var totalSize int64
 		var fileCount int
-		filepath.Walk(blobsDir, func(path string, info os.FileInfo, err error) error {
-			if err == nil && !info.IsDir() && !strings.HasSuffix(path, ".incomplete") && !strings.HasSuffix(path, ".meta") {
-				totalSize += info.Size()
-				fileCount++
-			}
-			return nil
-		})
+		flat := rd.IsFlat()
+		if flat {
+			names, _, total, _ := rd.FlatFiles()
+			totalSize, fileCount = total, len(names)
+			repoPath = rd.FriendlyPath()
+		} else {
+			filepath.Walk(blobsDir, func(path string, info os.FileInfo, err error) error {
+				if err == nil && !info.IsDir() && !strings.HasSuffix(path, ".incomplete") && !strings.HasSuffix(path, ".meta") {
+					totalSize += info.Size()
+					fileCount++
+				}
+				return nil
+			})
+		}
 
 		// Update stats
 		if rdType == "model" {
@@ -961,7 +978,7 @@ func (s *Server) handleCacheList(w http.ResponseWriter, r *http.Request) {
 			Owner:          rd.Owner(),
 			Name:           rd.Name(),
 			Type:           rdType,
-			Path:           rd.Path(),
+			Path:           repoPath,
 			FriendlyPath:   friendlyPath,
 			Size:           totalSize,
 			SizeHuman:      humanSizeBytes(totalSize),
@@ -1006,11 +1023,17 @@ func (s *Server) handleCacheInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check if the path exists
-	if _, err := os.Stat(repoDir.Path()); os.IsNotExist(err) {
+	// Check if the path exists (hub/ entry, or a flat repo's folder)
+	exists := func(rd *hfdownloader.RepoDir) bool {
+		if _, err := os.Stat(rd.Path()); err == nil {
+			return true
+		}
+		return rd.IsFlat()
+	}
+	if !exists(repoDir) {
 		// Try as dataset
 		repoDir, _ = cache.Repo(repo, hfdownloader.RepoTypeDataset)
-		if _, err := os.Stat(repoDir.Path()); os.IsNotExist(err) {
+		if !exists(repoDir) {
 			writeError(w, http.StatusNotFound, "Repository not found in cache", "")
 			return
 		}
@@ -1024,8 +1047,20 @@ func (s *Server) handleCacheInfo(w http.ResponseWriter, r *http.Request) {
 	var totalSize int64
 	var files []CachedFileInfo
 
-	// If we have snapshots, walk the latest one to get file names
-	if len(snapshots) > 0 {
+	if repoDir.IsFlat() {
+		// Flat repo: the files in its folder are the real data.
+		names, sizes, total, _ := repoDir.FlatFiles()
+		for i, name := range names {
+			files = append(files, CachedFileInfo{
+				Name:      name,
+				Size:      sizes[i],
+				SizeHuman: humanSizeBytes(sizes[i]),
+				IsLFS:     sizes[i] > 10*1024*1024,
+			})
+		}
+		totalSize = total
+	} else if len(snapshots) > 0 {
+		// If we have snapshots, walk the latest one to get file names
 		// Use the first snapshot (usually the most recent)
 		snapshotDir := repoDir.SnapshotDir(snapshots[0])
 		filepath.Walk(snapshotDir, func(path string, info os.FileInfo, err error) error {
@@ -1119,12 +1154,16 @@ func (s *Server) handleCacheInfo(w http.ResponseWriter, r *http.Request) {
 		shortCommit = shortCommit[:7]
 	}
 
+	infoPath := repoDir.Path()
+	if repoDir.IsFlat() {
+		infoPath = friendlyPath
+	}
 	info := CachedRepoInfo{
 		Repo:           repoDir.RepoID(),
 		Owner:          repoDir.Owner(),
 		Name:           repoDir.Name(),
 		Type:           string(repoDir.Type()),
-		Path:           repoDir.Path(),
+		Path:           infoPath,
 		FriendlyPath:   friendlyPath,
 		Size:           totalSize,
 		SizeHuman:      humanSizeBytes(totalSize),
@@ -1344,6 +1383,19 @@ func (s *Server) handleCacheDelete(w http.ResponseWriter, r *http.Request) {
 
 	// Security Layer 6: Check if path exists and is not a symlink (TOCTOU mitigation)
 	hubInfo, err := os.Lstat(absHubPath)
+	if os.IsNotExist(err) && repoDir.IsFlat() {
+		// Flat repo (serve --flatten): no hub/ entry, its folder in
+		// models/ or datasets/ holds the real files.
+		if err := safeDeleteFriendlyPath(friendlyPath, absCacheDirWithSep); err != nil {
+			writeError(w, http.StatusInternalServerError, "Failed to delete cache", err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"success": true,
+			"message": fmt.Sprintf("Deleted %s from cache", repo),
+		})
+		return
+	}
 	if os.IsNotExist(err) {
 		writeError(w, http.StatusNotFound, "Repository not found in cache", repo)
 		return
@@ -1382,7 +1434,9 @@ func (s *Server) handleCacheDelete(w http.ResponseWriter, r *http.Request) {
 	realHubPath, err := filepath.EvalSymlinks(absHubPath)
 	if err == nil && realHubPath != absHubPath {
 		// Path contained symlinks - verify resolved path is still within cache
-		if !strings.HasPrefix(realHubPath+string(filepath.Separator), absCacheDirWithSep) {
+		// (compared with the resolved cache dir, which may itself sit under a
+		// symlink, like macOS /var -> /private/var)
+		if !strings.HasPrefix(realHubPath+string(filepath.Separator), realDirWithSep(absCacheDir)) {
 			writeError(w, http.StatusBadRequest, "Invalid path", "Resolved path outside cache directory")
 			return
 		}
@@ -1451,15 +1505,24 @@ func safeDeleteFriendlyPath(friendlyPath, absCacheDirWithSep string) error {
 		return fmt.Errorf("friendly path is a symlink")
 	}
 
-	// Resolve symlinks and verify again
+	// Resolve symlinks and verify again, against the resolved cache dir
 	realPath, err := filepath.EvalSymlinks(absFriendlyPath)
 	if err == nil && realPath != absFriendlyPath {
-		if !strings.HasPrefix(realPath+string(filepath.Separator), absCacheDirWithSep) {
+		if !strings.HasPrefix(realPath+string(filepath.Separator), realDirWithSep(strings.TrimSuffix(absCacheDirWithSep, string(filepath.Separator)))) {
 			return fmt.Errorf("resolved friendly path outside cache")
 		}
 	}
 
 	return os.RemoveAll(absFriendlyPath)
+}
+
+// realDirWithSep returns dir with symlinks resolved (dir itself when that
+// fails) and a trailing separator, for prefix checks on resolved paths.
+func realDirWithSep(dir string) string {
+	if real, err := filepath.EvalSymlinks(dir); err == nil {
+		dir = real
+	}
+	return dir + string(filepath.Separator)
 }
 
 // parseCommandFilters extracts filter information from a manifest command string.

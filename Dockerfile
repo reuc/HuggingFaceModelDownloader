@@ -32,6 +32,7 @@
 #   AUTH_PASS  Basic-auth password for `serve`; also the SSH password
 #   SSH_ENABLE Start an SSH/SFTP server (default false; needs AUTH_USER/AUTH_PASS)
 #   SSH_PORT   SSH server port when SSH_ENABLE=true (default 22)
+#   FLATTEN    true: finished downloads become real files in models/ (no hub/)
 #
 #   docker run --rm -p 3000:3000 -p 2222:2222 \
 #     -e HTTP_PORT=3000 -e SSH_ENABLE=true -e SSH_PORT=2222 \

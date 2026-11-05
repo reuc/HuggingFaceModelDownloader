@@ -41,6 +41,9 @@ type Config struct {
 	// LinkMode is how HF cache entries refer to downloaded data (see
 	// hfdownloader.LinkMode); empty = auto.
 	LinkMode string
+	// Flatten moves each finished download out of hub/ into models/ or
+	// datasets/ as real files (hfdownloader.Settings.Flatten).
+	Flatten bool
 	// ExportDir enables "Export as real files" in the web UI: exports are
 	// written to <ExportDir>/<owner>/<name>. Empty disables exporting from
 	// the web, so the API can't be used to write files anywhere else.

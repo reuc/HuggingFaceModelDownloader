@@ -107,6 +107,9 @@ func validate(job Job, cfg Settings) error {
 	if job.Revision != "" && !ValidRevision(job.Revision) {
 		return fmt.Errorf("invalid revision %q", job.Revision)
 	}
+	if cfg.Flatten && cfg.NoFriendlyView {
+		return errors.New("flatten stores files in the friendly view; it can't be combined with no-friendly")
+	}
 	switch cfg.Verify {
 	case "", "none", "size", "etag", "sha256":
 	default:
