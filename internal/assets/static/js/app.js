@@ -2168,8 +2168,7 @@
               ${escapeHtml(data.type)}
             </span>
             <div class="cache-detail-repo">
-              <span class="cache-detail-owner">${escapeHtml(data.owner)}/</span>
-              <span class="cache-detail-name">${escapeHtml(data.name)}</span>
+              <span class="cache-detail-owner">${escapeHtml(data.owner)}/</span><span class="cache-detail-name">${escapeHtml(data.name)}</span>
             </div>
           </div>
 
