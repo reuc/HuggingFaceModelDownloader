@@ -422,7 +422,7 @@ Browse everything you've downloaded with stats, search, and filters:
 | Page | Features |
 |------|----------|
 | **Analyze** | Enter any repo, auto-detect type, see files/sizes, pick GGUF quantizations |
-| **Jobs** | Real-time WebSocket progress, pause/resume/cancel, download history |
+| **Jobs** | Real-time WebSocket progress, pause/resume/cancel, move a queued download to the top, download history |
 | **Cache** | Browse downloaded repos, disk usage stats, search & filter |
 | **Mirror** | Configure targets, compare differences, push/pull sync |
 | **Settings** | Token, connections, proxy, verification mode |
