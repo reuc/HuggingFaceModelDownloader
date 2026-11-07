@@ -1,3 +1,22 @@
+# Build, test and publish the container image to Docker Hub.
+#
+# Publishes docker.io/<DOCKER_USER>/hfdownloader (linux/amd64 + linux/arm64).
+# Each architecture is built natively and must pass the architecture check,
+# scripts/docker-smoke-test.sh and the grype CVE gate (scripts/cve-gate.sh);
+# only the exact image that passed is pushed. If either architecture fails,
+# nothing is published. Each per-architecture image gets an SBOM attestation
+# and a cosign signature; the multi-arch index gets SLSA build provenance and
+# a cosign signature.
+#
+# Tags:
+#   release vX.Y.Z      X.Y.Z, X.Y, X, latest, sha-<short commit>
+#                       (a pre-release gets only its version and sha-<short>)
+#   workflow_dispatch   the "tag" input (default: latest), sha-<short commit>
+# Pin deployments by digest; it is shown in each run's summary.
+#
+# Repository settings needed:
+#   DOCKER_USER   Docker Hub user/namespace (a variable or a secret)
+#   DOCKER_TOKEN  Docker Hub access token with Read & Write scope (secret)
 name: Docker Build & Publish
 
 on:
@@ -6,57 +25,259 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Image tag (default: latest)'
+        description: 'Image tag, in addition to sha-<commit> (default: latest)'
         required: false
         default: 'latest'
+  # Dry run on PRs that change this workflow: gates only, no login or push.
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/docker-publish.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  # Never cancel a publish midway.
+  group: docker-publish
+  cancel-in-progress: false
 
 env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+  IMAGE: hfdownloader
+  DOCKER_NS: ${{ vars.DOCKER_USER || secrets.DOCKER_USER }}
+  PUBLISH: ${{ github.event_name != 'pull_request' }}
 
 jobs:
-  build-and-push:
-    runs-on: ubuntu-latest
+  gate:
+    name: gate (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
     permissions:
       contents: read
-      packages: write
-
+      id-token: write # keyless cosign signing
+      attestations: write # SBOM attestation
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    env:
+      LOCAL: hfdownloader:publish-${{ github.run_id }}
+      ARCH: ${{ matrix.arch }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4
+      - name: Source commit
+        id: src
+        run: echo "short=$(git rev-parse --short=7 HEAD)" >> "$GITHUB_OUTPUT"
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+      - name: Install grype
+        id: grype
+        uses: anchore/scan-action/download-grype@v7
 
-      - name: Log in to Container Registry
+      - name: Build
+        env:
+          VERSION: ${{ github.event_name == 'release' && github.event.release.tag_name || steps.src.outputs.short }}
+        run: |
+          docker build --pull --platform "linux/${ARCH}" \
+            --build-arg "APK_CACHE_BUST=$(date -u +%Y%m%d)" \
+            --label "org.opencontainers.image.created=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
+            --label "org.opencontainers.image.version=${VERSION#v}" \
+            -t "$LOCAL" .
+
+      - name: Verify image architecture
+        run: |
+          got=$(docker image inspect --format '{{.Os}}/{{.Architecture}}' "$LOCAL")
+          echo "$LOCAL is $got"
+          [ "$got" = "linux/${ARCH}" ]
+
+      - name: Smoke test
+        run: scripts/docker-smoke-test.sh "$LOCAL"
+
+      - name: CVE gate
+        env:
+          GRYPE: ${{ steps.grype.outputs.cmd }}
+        run: scripts/cve-gate.sh "$LOCAL" "hfdownloader-${ARCH}"
+
+      - name: Upload grype report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: grype-publish-${{ matrix.arch }}
+          path: reports/
+          if-no-files-found: ignore
+          retention-days: 30
+
+      # ---- publish the tested per-architecture image (not on pull requests)
+
+      - name: Check Docker Hub settings
+        if: env.PUBLISH == 'true'
+        env:
+          HAS_TOKEN: ${{ secrets.DOCKER_TOKEN != '' }}
+        run: |
+          [ -n "$DOCKER_NS" ] || { echo "::error::Set DOCKER_USER (repository variable or secret)"; exit 1; }
+          [ "$HAS_TOKEN" = true ] || { echo "::error::Set the DOCKER_TOKEN secret (Docker Hub access token, Read & Write)"; exit 1; }
+
+      - name: Log in to Docker Hub
+        if: env.PUBLISH == 'true'
         uses: docker/login-action@v4
         with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          username: ${{ env.DOCKER_NS }}
+          password: ${{ secrets.DOCKER_TOKEN }}
 
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v6
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=raw,value=${{ github.event.inputs.tag }},enable=${{ github.event_name == 'workflow_dispatch' }}
+      - name: Push ${{ matrix.arch }} image
+        id: push
+        if: env.PUBLISH == 'true'
+        env:
+          SHORT: ${{ steps.src.outputs.short }}
+        run: |
+          remote="docker.io/${DOCKER_NS}/${IMAGE}:sha-${SHORT}-${ARCH}"
+          docker tag "$LOCAL" "$remote"
+          docker push "$remote" | tee push.log
+          digest=$(grep -o 'digest: sha256:[0-9a-f]*' push.log | head -1 | cut -d' ' -f2)
+          [ -n "$digest" ] || { echo "::error::could not read the pushed digest"; exit 1; }
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
 
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v7
+      - name: Generate SBOM
+        if: env.PUBLISH == 'true'
+        uses: anchore/sbom-action@v0
         with:
-          context: .
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          image: ${{ env.LOCAL }}
+          format: spdx-json
+          output-file: sbom-${{ matrix.arch }}.spdx.json
+          upload-artifact: false
+
+      - name: Attest SBOM
+        if: env.PUBLISH == 'true'
+        uses: actions/attest@v4
+        with:
+          subject-name: index.docker.io/${{ env.DOCKER_NS }}/${{ env.IMAGE }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          sbom-path: sbom-${{ matrix.arch }}.spdx.json
+          push-to-registry: true
+
+      - name: Install cosign
+        if: env.PUBLISH == 'true'
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2 (no floating major tag)
+
+      - name: Sign ${{ matrix.arch }} image
+        if: env.PUBLISH == 'true'
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: cosign sign --yes "docker.io/${DOCKER_NS}/${IMAGE}@${DIGEST}"
+
+  publish:
+    name: publish multi-arch image
+    needs: gate
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write # keyless cosign signing
+      attestations: write # build provenance
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Tags
+        id: tags
+        env:
+          EVENT: ${{ github.event_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          PRERELEASE: ${{ github.event.release.prerelease }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          short=$(git rev-parse --short=7 HEAD)
+          tags="sha-${short}"
+          if [ "$EVENT" = release ]; then
+            v=${RELEASE_TAG#v}
+            tags="$tags $v"
+            if [ "$PRERELEASE" != true ] && [[ "$v" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+              tags="$tags ${BASH_REMATCH[1]}.${BASH_REMATCH[2]} ${BASH_REMATCH[1]} latest"
+            fi
+          elif [ -n "$INPUT_TAG" ]; then
+            [[ "$INPUT_TAG" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]] || { echo "::error::invalid tag input: '$INPUT_TAG'"; exit 1; }
+            tags="$tags $INPUT_TAG"
+          fi
+          for t in $tags; do
+            [[ "$t" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]] || { echo "::error::invalid image tag: $t"; exit 1; }
+          done
+          echo "short=$short" >> "$GITHUB_OUTPUT"
+          echo "tags=$tags" >> "$GITHUB_OUTPUT"
+          echo "Tags: $tags"
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v4
+        with:
+          username: ${{ env.DOCKER_NS }}
+          password: ${{ secrets.DOCKER_TOKEN }}
+
+      - name: Create multi-arch image
+        id: index
+        env:
+          SHORT: ${{ steps.tags.outputs.short }}
+          TAGS: ${{ steps.tags.outputs.tags }}
+        run: |
+          repo="docker.io/${DOCKER_NS}/${IMAGE}"
+          args=()
+          for t in $TAGS; do args+=(-t "$repo:$t"); done
+          docker buildx imagetools create "${args[@]}" \
+            "$repo:sha-${SHORT}-amd64" "$repo:sha-${SHORT}-arm64"
+          digest=$(docker buildx imagetools inspect "$repo:sha-${SHORT}" --format '{{json .Manifest}}' | jq -r .digest)
+          [ -n "$digest" ] && [ "$digest" != null ] || { echo "::error::could not read the index digest"; exit 1; }
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          docker buildx imagetools inspect "$repo:sha-${SHORT}"
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2 (no floating major tag)
+
+      - name: Sign multi-arch image
+        env:
+          DIGEST: ${{ steps.index.outputs.digest }}
+        run: cosign sign --yes "docker.io/${DOCKER_NS}/${IMAGE}@${DIGEST}"
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: index.docker.io/${{ env.DOCKER_NS }}/${{ env.IMAGE }}
+          subject-digest: ${{ steps.index.outputs.digest }}
+          push-to-registry: true
+
+      - name: Summary
+        env:
+          DIGEST: ${{ steps.index.outputs.digest }}
+          SHORT: ${{ steps.tags.outputs.short }}
+          TAGS: ${{ steps.tags.outputs.tags }}
+          REPO_SLUG: ${{ github.repository }}
+        run: |
+          repo="docker.io/${DOCKER_NS}/${IMAGE}"
+          # shellcheck disable=SC2016 # literal backticks: Markdown code spans
+          tags_md=$(for t in $TAGS; do printf '`%s` ' "$t"; done)
+          {
+            echo "### Published ${repo}"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Digest | \`${DIGEST}\` |"
+            echo "| Tags | ${tags_md}|"
+            echo "| Platforms | linux/amd64, linux/arm64 |"
+            echo "| Source | ${REPO_SLUG}@${SHORT} |"
+            echo
+            echo "Pull by digest: \`docker pull ${repo}@${DIGEST}\`"
+            echo
+            echo "Verify:"
+            echo '```'
+            echo "cosign verify ${repo}@${DIGEST} \\"
+            echo "  --certificate-oidc-issuer https://token.actions.githubusercontent.com \\"
+            echo "  --certificate-identity-regexp '^https://github.com/${REPO_SLUG}/\\.github/workflows/docker-publish\\.yml@'"
+            echo "gh attestation verify oci://${repo}@${DIGEST} -R ${REPO_SLUG}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
