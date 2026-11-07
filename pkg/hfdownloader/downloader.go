@@ -412,21 +412,6 @@ LOOP:
 			itForIO := it
 			itForIO.RelativePath = finalRel
 
-			// Choose single/multipart path
-			var dlErr error
-			if it.Size >= thresholdBytes && it.AcceptRanges {
-				dlErr = downloadMultipart(fileCtx, httpc, cfg.Token, job, cfg, itForIO, dst, emit)
-			} else {
-				dlErr = downloadSingle(fileCtx, httpc, cfg.Token, job, cfg, itForIO, dst, emit)
-			}
-			if dlErr != nil {
-				select {
-				case errCh <- &DownloadError{Path: finalRel, Err: dlErr}:
-				default:
-				}
-				return
-			}
-
 			// Verify after download.
 			//
 			// When the plan carries an expected content SHA256 (always for LFS,
@@ -439,18 +424,63 @@ LOOP:
 			verifyProgress := func(done int64) {
 				emit(ProgressEvent{Event: "file_verify", Path: finalRel, Downloaded: done, Total: it.Size})
 			}
-			if verr := verifyDownloadedProgress(fileCtx, httpc, cfg, itForIO, it, dst, finalRel, verifyProgress); verr != nil {
-				// A file that failed verification is corrupt: remove it so it
-				// isn't left consuming disk space (the next run re-downloads).
+			verify := func() error {
+				return verifyDownloadedProgress(fileCtx, httpc, cfg, itForIO, it, dst, finalRel, verifyProgress)
+			}
+
+			// A previous run may have downloaded this file completely and then
+			// been stopped (paused, Ctrl+C, killed) while verifying it, which
+			// for a large file is a long phase. The finished temp file is
+			// still there: check it instead of downloading it all again. If it
+			// doesn't verify, it is removed and downloaded normally.
+			verified := false
+			if useHFCache && finishedTempFile(dst, it) {
+				emit(ProgressEvent{Event: "file_progress", Path: finalRel, Downloaded: it.Size, Total: it.Size})
+				verr := verify()
 				var ve *VerificationError
-				if errors.As(verr, &ve) {
+				switch {
+				case verr == nil:
+					verified = true
+				case errors.As(verr, &ve):
 					_ = os.Remove(dst)
-				}
-				select {
-				case errCh <- verr:
 				default:
+					select {
+					case errCh <- verr:
+					default:
+					}
+					return
 				}
-				return
+			}
+
+			if !verified {
+				// Choose single/multipart path
+				var dlErr error
+				if it.Size >= thresholdBytes && it.AcceptRanges {
+					dlErr = downloadMultipart(fileCtx, httpc, cfg.Token, job, cfg, itForIO, dst, emit)
+				} else {
+					dlErr = downloadSingle(fileCtx, httpc, cfg.Token, job, cfg, itForIO, dst, emit)
+				}
+				if dlErr != nil {
+					select {
+					case errCh <- &DownloadError{Path: finalRel, Err: dlErr}:
+					default:
+					}
+					return
+				}
+
+				if verr := verify(); verr != nil {
+					// A file that failed verification is corrupt: remove it so it
+					// isn't left consuming disk space (the next run re-downloads).
+					var ve *VerificationError
+					if errors.As(verr, &ve) {
+						_ = os.Remove(dst)
+					}
+					select {
+					case errCh <- verr:
+					default:
+					}
+					return
+				}
 			}
 
 			// For HF Cache mode: move to blob and create symlinks
@@ -842,6 +872,42 @@ func prepareMultipartLayout(dst string, n int, size int64) error {
 	return os.WriteFile(multipartLayoutFile(dst), []byte(layout), 0o644)
 }
 
+// maxRecordedParts bounds the part count read back from a layout record.
+const maxRecordedParts = 1024
+
+// recordedPartCount returns how many parts an earlier run split dst into, if
+// that run recorded the split for a file of this size and left part data.
+func recordedPartCount(dst string, size int64) (int, bool) {
+	b, err := os.ReadFile(multipartLayoutFile(dst))
+	if err != nil {
+		return 0, false
+	}
+	var n int
+	var recSize int64
+	if _, err := fmt.Sscan(string(b), &n, &recSize); err != nil || recSize != size || n < 1 || n > maxRecordedParts {
+		return 0, false
+	}
+	for i := 0; i < n; i++ {
+		if fi, err := os.Stat(fmt.Sprintf("%s.part-%02d", dst, i)); err == nil && fi.Size() > 0 {
+			return n, true
+		}
+	}
+	return 0, false
+}
+
+// finishedTempFile reports whether dst holds a complete download of it that
+// was never verified and stored: a temp file is renamed to dst only once all
+// of its bytes arrived. Only content-addressed temp files qualify (named by
+// SHA256 or git blob id), so the check that follows is against the hash of
+// exactly this version.
+func finishedTempFile(dst string, it PlanItem) bool {
+	if it.Size <= 0 || (it.SHA256 == "" && !validGitOID(it.GitOID)) {
+		return false
+	}
+	fi, err := os.Lstat(dst)
+	return err == nil && fi.Mode().IsRegular() && fi.Size() == it.Size
+}
+
 // removeMultipartParts deletes all part files and the layout record for dst.
 func removeMultipartParts(dst string) {
 	if matches, err := filepath.Glob(globEscape(dst) + ".part-*"); err == nil {
@@ -925,8 +991,14 @@ func downloadMultipart(ctx context.Context, httpc *http.Client, token string, jo
 		return downloadSingle(ctx, httpc, token, job, cfg, it, dst, emit)
 	}
 
-	// Plan parts
+	// Plan parts. A file partly downloaded by an earlier run keeps the split
+	// it was started with, even if the connections setting changed since
+	// (web UI settings, `resume -c`): another split would discard every part
+	// already on disk.
 	n := cfg.Concurrency
+	if prev, ok := recordedPartCount(dst, it.Size); ok {
+		n = prev
+	}
 	chunk := it.Size / int64(n)
 	if chunk <= 0 {
 		chunk = it.Size
