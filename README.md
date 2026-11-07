@@ -641,6 +641,44 @@ docker buildx build --load \
   -t hfdownloader .
 ```
 
+#### CVE gate and smoke test
+
+Every pull request, every push to `main` and a monthly run (06:17 UTC on the 1st) build the image natively on amd64 and arm64 (`.github/workflows/docker-build-and-scan.yml`). Each build must pass:
+
+- **`scripts/docker-smoke-test.sh`:** CLI and help, the image hardening, `serve` with the environment variables and basic auth, the drop to uid 1000, `--user 568:568`, and SSH/SFTP login with `SSH_ENABLE=true`.
+- **`scripts/cve-gate.sh`:** a [grype](https://github.com/anchore/grype) scan that fails above **0 Critical, 2 High, 4 Medium or 9 Low** unique CVEs.
+
+Each run's summary lists the findings, and the grype report is uploaded as an artifact. To make a failing gate block merges, require the **`docker-build-and-scan (all)`** check in the branch protection rule for `main`. For a reviewed false positive, add a [grype ignore rule](https://github.com/anchore/grype#specifying-matches-to-ignore) with a justification to `.grype.yaml`; don't raise the limits.
+
+Run both locally (needs grype and jq):
+
+```bash
+docker build -t hfdownloader:local .
+scripts/docker-smoke-test.sh hfdownloader:local
+scripts/cve-gate.sh hfdownloader:local
+```
+
+#### Published images
+
+`.github/workflows/docker-publish.yml` publishes **`docker.io/reuc/hfdownloader`** for `linux/amd64` and `linux/arm64`. It runs when a release is published, or on demand (**Actions → Docker Build & Publish → Run workflow**). Each architecture must pass the smoke test and the CVE gate first. Only the exact image that passed is pushed, and if either architecture fails, nothing is published.
+
+| Published from | Tags |
+|---|---|
+| release `vX.Y.Z` | `X.Y.Z`, `X.Y`, `X`, `latest`, `sha-<commit>` (a pre-release gets only its version and `sha-<commit>`) |
+| manual run | the `tag` input (default `latest`), `sha-<commit>` |
+
+Each per-architecture image gets an SBOM attestation and a cosign signature. The multi-arch image gets SLSA build provenance and a cosign signature. For deployments, pin by digest; it's shown in each run's summary. Verify an image before using it:
+
+```bash
+IMAGE=docker.io/reuc/hfdownloader@sha256:<digest>
+cosign verify "$IMAGE" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  --certificate-identity-regexp '^https://github.com/reuc/HuggingFaceModelDownloader/\.github/workflows/docker-publish\.yml@'
+gh attestation verify "oci://$IMAGE" -R reuc/HuggingFaceModelDownloader
+```
+
+The workflow needs two repository settings: `DOCKER_USER` (the Docker Hub namespace, as a variable or a secret) and `DOCKER_TOKEN` (a Docker Hub access token with Read & Write scope).
+
 #### TrueNAS SCALE
 
 A ready-made app file is in [`deploy/truenas/hfdownloader.yaml`](deploy/truenas/hfdownloader.yaml).

@@ -1,0 +1,120 @@
+# Build, smoke-test and CVE-gate the container image on both architectures.
+#
+# Each architecture builds natively on its own runner (no QEMU). A job fails
+# if the build, the architecture check, scripts/docker-smoke-test.sh or the
+# grype CVE gate (scripts/cve-gate.sh: 0 Critical, fewer than 3 High, 5 Medium
+# and 10 Low) fails. The monthly run catches newly published CVEs and picks up
+# new Wolfi fixes without a code change.
+#
+# This workflow only builds and scans; docker-publish.yml publishes.
+# For branch protection, require the single "docker-build-and-scan (all)" check.
+name: docker-build-and-scan
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 6 1 * *" # 06:17 UTC on the 1st of each month
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-scan:
+    name: build-scan (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    env:
+      IMAGE: hfdownloader:ci-${{ github.run_id }}
+      ARCH: ${{ matrix.arch }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install grype
+        id: grype
+        uses: anchore/scan-action/download-grype@v7
+
+      - name: Build
+        # APK_CACHE_BUST=today so each day's builds re-resolve the Wolfi packages.
+        run: |
+          docker build --pull --platform "linux/${ARCH}" \
+            --build-arg "APK_CACHE_BUST=$(date -u +%Y%m%d)" \
+            --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
+            -t "$IMAGE" .
+
+      - name: Verify image architecture
+        run: |
+          got=$(docker image inspect --format '{{.Os}}/{{.Architecture}}' "$IMAGE")
+          echo "$IMAGE is $got"
+          [ "$got" = "linux/${ARCH}" ]
+
+      - name: Smoke test
+        run: scripts/docker-smoke-test.sh "$IMAGE"
+
+      - name: CVE gate
+        env:
+          GRYPE: ${{ steps.grype.outputs.cmd }}
+        run: scripts/cve-gate.sh "$IMAGE" "hfdownloader-${ARCH}"
+
+      - name: Job summary
+        if: always()
+        run: |
+          f="reports/hfdownloader-${ARCH}-grype.json"
+          [ -f "$f" ] || { echo "No grype report for ${ARCH}." >> "$GITHUB_STEP_SUMMARY"; exit 0; }
+          {
+            echo "### CVE scan: hfdownloader (${ARCH})"
+            echo
+            echo "| Severity | Unique CVEs |"
+            echo "|---|---|"
+            for s in Critical High Medium Low Negligible Unknown; do
+              n=$(jq --arg s "$s" '[.matches[] | select(.vulnerability.severity == $s) | .vulnerability.id] | unique | length' "$f")
+              echo "| $s | $n |"
+            done
+            echo
+            echo "<details><summary>Findings</summary>"
+            echo
+            echo "| Severity | ID | Package | Installed | Fixed in |"
+            echo "|---|---|---|---|---|"
+            jq -r '.matches[] | "| \(.vulnerability.severity) | \(.vulnerability.id) | \(.artifact.name) | \(.artifact.version) | \(.vulnerability.fix.versions | join(", ")) |"' "$f" | sort -u
+            echo
+            echo "</details>"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload grype report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: grype-hfdownloader-${{ matrix.arch }}
+          path: reports/
+          if-no-files-found: ignore
+          retention-days: 30
+
+  # Single status check for branch protection.
+  all:
+    name: docker-build-and-scan (all)
+    if: always()
+    needs: build-scan
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check results
+        env:
+          RESULT: ${{ needs.build-scan.result }}
+        run: |
+          echo "build-scan: $RESULT"
+          [ "$RESULT" = success ]
