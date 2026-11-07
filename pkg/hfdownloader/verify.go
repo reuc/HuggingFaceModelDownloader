@@ -104,6 +104,7 @@ func matchesGitOID(path, oid string) bool {
 	var h hash.Hash
 	switch len(oid) {
 	case 40:
+		// deepcode ignore InsecureHash: git defines blob ids of SHA-1 repos as SHA-1; this checks a file against the Hub's git oid, not a password
 		h = sha1.New()
 	case 64:
 		h = sha256.New()

@@ -453,6 +453,7 @@ func scanCacheForMirror(cacheDir string) ([]mirrorEntry, error) {
 		return entries, nil
 	}
 
+	// deepcode ignore PT: cacheDir is the server's cache or a registered target path; the API takes only a target name, looked up in the server-side registry
 	items, err := os.ReadDir(hubDir)
 	if err != nil {
 		return nil, err
@@ -493,6 +494,7 @@ func scanCacheForMirror(cacheDir string) ([]mirrorEntry, error) {
 		// Try to read commit from refs/main
 		var commit string
 		refPath := filepath.Join(hubDir, name, "refs", "main")
+		// deepcode ignore PT: cacheDir is the server's cache or a registered target path, never a request value; name comes from os.ReadDir of its hub dir
 		if data, err := os.ReadFile(refPath); err == nil {
 			commit = strings.TrimSpace(string(data))
 		}
@@ -631,6 +633,7 @@ func mirrorSync(srcCache, dstCache, repoFilter string, dryRun, verify, deleteExt
 
 	// Delete extra repos
 	for _, e := range toDelete {
+		// deepcode ignore PT: e.Path is <target>/hub/<entry> from listing a registered target; the API takes only a target name, looked up in the server-side registry (web-added targets are confined to --mirror-dir)
 		if err := os.RemoveAll(e.Path); err != nil {
 			result.Errors = append(result.Errors, fmt.Sprintf("delete %s: %v", e.Repo, err))
 			result.Success = false

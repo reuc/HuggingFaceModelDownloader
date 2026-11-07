@@ -232,6 +232,7 @@ func (s *Server) handler() http.Handler {
 				contentType = "image/svg+xml"
 			}
 			w.Header().Set("Content-Type", contentType)
+			// deepcode ignore XSS: f is an asset embedded in the binary; the URL only selects which embedded file is served
 			w.Write(f)
 			return
 		}

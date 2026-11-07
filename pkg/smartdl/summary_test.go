@@ -42,6 +42,7 @@ func fakeSummaryHub(t *testing.T, trees map[string][]map[string]any, raw map[str
 				http.NotFound(w, r)
 				return
 			}
+			// deepcode ignore XSS/test: httptest fake of the Hub API serving fixed JSON fixtures
 			w.Write([]byte(body))
 		default:
 			body, ok := raw[p]
@@ -49,6 +50,7 @@ func fakeSummaryHub(t *testing.T, trees map[string][]map[string]any, raw map[str
 				http.NotFound(w, r)
 				return
 			}
+			// deepcode ignore XSS/test: httptest fake of the Hub API serving fixed JSON fixtures
 			w.Write([]byte(body))
 		}
 	}))
