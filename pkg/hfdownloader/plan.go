@@ -165,8 +165,16 @@ func scanRepo(ctx context.Context, httpc *http.Client, token string, job Job, cf
 				sha = n.LFS.Oid
 			}
 		}
+		// A gated repo lists a masked hash ("****…") until access is
+		// granted. Treat it as unknown, like a file the tree gives no hash
+		// for: the content hash is computed from the download instead, and
+		// a client without access gets the access-denied error from the
+		// file request rather than an "unsafe sha256" one here.
+		if maskedHash(sha) {
+			sha = ""
+		}
 		// The hash names the blob (blobs/<sha>, blobs/tmp-<sha>): reject
-		// anything that isn't a hex SHA256 before it can reach the
+		// anything else that isn't a hex SHA256 before it can reach the
 		// filesystem, failing the whole plan like a bad path does.
 		if sha != "" && !validSHA256Hex(sha) {
 			return fmt.Errorf("refusing unsafe sha256 from repo tree for %q: %q", rel, sha)
