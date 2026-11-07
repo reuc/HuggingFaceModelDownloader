@@ -552,7 +552,7 @@ All fields are optional; only the fields present are changed.
 | `verify` | string | `none`, `size`, `etag`, `sha256` | Verification for files without a known SHA256 |
 | `retries` | integer | 0–20 | Retry attempts (`0` is accepted but leaves the value unchanged) |
 | `endpoint` | string | `http://` or `https://` URL, or `""` | Custom Hub endpoint (`""` restores the default) |
-| `proxy` | object | | `url`, `username`, `password`, `noProxy`, `noEnvProxy`, `insecureSkipVerify`; only fields present are changed. An empty `url` removes the proxy |
+| `proxy` | object | | `url`, `username`, `password`, `noProxy`, `noEnvProxy`, `insecureSkipVerify`; only fields present are changed. An empty `url` removes the proxy. `insecureSkipVerify` can only be set to `false` here: skipping TLS verification exposes the Hub token, so enabling it takes `proxy.insecure_skip_verify` in the server's config file (`true` is rejected with `400` unless the config file already enabled it) |
 
 An invalid value rejects the whole request with `400`:
 
