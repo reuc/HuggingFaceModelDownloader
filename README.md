@@ -643,7 +643,7 @@ docker buildx build --load \
 
 #### CVE gate and smoke test
 
-Every pull request, every push to `main` and a daily run build the image natively on amd64 and arm64 (`.github/workflows/docker-build-and-scan.yml`). Each build must pass:
+Every pull request, every push to `main` and a monthly run (06:17 UTC on the 1st) build the image natively on amd64 and arm64 (`.github/workflows/docker-build-and-scan.yml`). Each build must pass:
 
 - **`scripts/docker-smoke-test.sh`:** CLI and help, the image hardening, `serve` with the environment variables and basic auth, the drop to uid 1000, `--user 568:568`, and SSH/SFTP login with `SSH_ENABLE=true`.
 - **`scripts/cve-gate.sh`:** a [grype](https://github.com/anchore/grype) scan that fails above **0 Critical, 2 High, 4 Medium or 9 Low** unique CVEs.

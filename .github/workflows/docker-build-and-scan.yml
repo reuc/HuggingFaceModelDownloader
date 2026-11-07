@@ -3,7 +3,7 @@
 # Each architecture builds natively on its own runner (no QEMU). A job fails
 # if the build, the architecture check, scripts/docker-smoke-test.sh or the
 # grype CVE gate (scripts/cve-gate.sh: 0 Critical, fewer than 3 High, 5 Medium
-# and 10 Low) fails. The daily run catches newly published CVEs and picks up
+# and 10 Low) fails. The monthly run catches newly published CVEs and picks up
 # new Wolfi fixes without a code change.
 #
 # This workflow only builds and scans; docker-publish.yml publishes.
@@ -15,7 +15,7 @@ on:
   push:
     branches: [main]
   schedule:
-    - cron: "17 6 * * *"
+    - cron: "17 6 1 * *" # 06:17 UTC on the 1st of each month
   workflow_dispatch:
 
 permissions:
@@ -51,7 +51,7 @@ jobs:
         uses: anchore/scan-action/download-grype@v7
 
       - name: Build
-        # APK_CACHE_BUST=today so the Wolfi packages are re-resolved at least daily.
+        # APK_CACHE_BUST=today so each day's builds re-resolve the Wolfi packages.
         run: |
           docker build --pull --platform "linux/${ARCH}" \
             --build-arg "APK_CACHE_BUST=$(date -u +%Y%m%d)" \
