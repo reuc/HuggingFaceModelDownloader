@@ -294,9 +294,8 @@ func TestVerifyMode(t *testing.T) {
 	}
 
 	// Check default
-	defaultMode := "size"
-	if defaultMode != "size" {
-		t.Errorf("default verify mode = %q", defaultMode)
+	if defaultMode := DefaultSettings().Verify; defaultMode != "size" {
+		t.Errorf("default verify mode = %q, want %q", defaultMode, "size")
 	}
 }
 

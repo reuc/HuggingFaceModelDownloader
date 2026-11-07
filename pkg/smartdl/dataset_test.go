@@ -87,7 +87,7 @@ func TestAnalyzeDataset(t *testing.T) {
 	})
 
 	t.Run("empty dataset", func(t *testing.T) {
-		files := []FileInfo{}
+		var files []FileInfo
 		info := analyzeDataset(files)
 		if len(info.Splits) != 0 {
 			t.Errorf("Splits should be empty, got %d", len(info.Splits))

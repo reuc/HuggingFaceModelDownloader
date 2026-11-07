@@ -6,6 +6,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -80,32 +81,30 @@ Examples:
 				testURL = "https://huggingface.co/api/whoami"
 			}
 
-			fmt.Printf("Testing proxy connection...\n")
-			fmt.Printf("  Proxy: %s\n", proxyURL)
-			if proxyUser != "" {
-				fmt.Printf("  Auth:  %s:***\n", proxyUser)
+			// With --json, stdout carries only the JSON result.
+			if !ro.JSONOut {
+				fmt.Printf("Testing proxy connection...\n")
+				// The proxy URL with the username shown and any password masked.
+				fmt.Printf("  Proxy: %s\n", hfdownloader.GetProxyInfoString(proxy))
+				fmt.Printf("  URL:   %s\n", testURL)
+				fmt.Printf("  Timeout: %s\n\n", timeoutDur)
 			}
-			fmt.Printf("  URL:   %s\n", testURL)
-			fmt.Printf("  Timeout: %s\n\n", timeoutDur)
 
 			ctx, cancel := context.WithTimeout(context.Background(), timeoutDur)
 			defer cancel()
 
 			result, err := hfdownloader.TestProxy(ctx, proxy, testURL)
-			if err != nil {
-				if ro.JSONOut {
-					enc := json.NewEncoder(os.Stdout)
-					enc.SetIndent("", "  ")
-					enc.Encode(result)
-				}
-				fmt.Printf("❌ Proxy test failed: %v\n", err)
-				return err
-			}
-
 			if ro.JSONOut {
 				enc := json.NewEncoder(os.Stdout)
 				enc.SetIndent("", "  ")
-				return enc.Encode(result)
+				if encErr := enc.Encode(result); encErr != nil {
+					return errors.Join(err, encErr)
+				}
+				return err // a failure is also in the JSON; it still sets the exit status
+			}
+			if err != nil {
+				fmt.Printf("❌ Proxy test failed: %v\n", err)
+				return err
 			}
 
 			fmt.Printf("✅ Proxy connection successful!\n")

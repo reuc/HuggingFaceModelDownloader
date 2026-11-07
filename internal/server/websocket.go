@@ -229,16 +229,24 @@ func (c *WSClient) writePump() {
 	ticker := time.NewTicker(30 * time.Second)
 	defer func() {
 		ticker.Stop()
-		c.conn.Close()
+		// Closing also stops readPump (its read fails), which unregisters the
+		// client. readPump closes the conn too; whichever Close runs second
+		// only returns an error, so it's discarded.
+		_ = c.conn.Close()
 	}()
 
+	// Any failure to set a deadline or write means the connection is broken:
+	// return and let the deferred Close tear it down.
 	for {
 		select {
 		case message, ok := <-c.send:
-			c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+			if err := c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second)); err != nil {
+				return
+			}
 			if !ok {
-				// Hub closed the channel
-				c.conn.WriteMessage(websocket.CloseMessage, []byte{})
+				// Hub closed the channel. Best-effort close frame: the conn
+				// is closed on return whether or not it was sent.
+				_ = c.conn.WriteMessage(websocket.CloseMessage, []byte{})
 				return
 			}
 
@@ -251,7 +259,9 @@ func (c *WSClient) writePump() {
 			}
 
 		case <-ticker.C:
-			c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+			if err := c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second)); err != nil {
+				return
+			}
 			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				return
 			}
@@ -266,14 +276,17 @@ func (c *WSClient) readPump() {
 		c.closed = true
 		c.mu.Unlock()
 		c.hub.unregister <- c
-		c.conn.Close()
+		// writePump may already have closed it; that error is meaningless.
+		_ = c.conn.Close()
 	}()
 
 	c.conn.SetReadLimit(512 * 1024) // 512KB
-	c.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+	if err := c.conn.SetReadDeadline(time.Now().Add(60 * time.Second)); err != nil {
+		return // connection already broken; the deferred cleanup runs
+	}
 	c.conn.SetPongHandler(func(string) error {
-		c.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
-		return nil
+		// A non-nil error here makes ReadMessage below fail, ending the loop.
+		return c.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 	})
 
 	for {

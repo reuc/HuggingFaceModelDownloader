@@ -52,8 +52,8 @@ type Job struct {
 	// below every other queued job, which can be zero or negative.
 	QueueSeq int64 `json:"queueSeq,omitempty"`
 
-	cancel     context.CancelFunc `json:"-"`
-	generation int                `json:"-"` // Tracks which runJob instance is current
+	cancel     context.CancelFunc
+	generation int // Tracks which runJob instance is current
 }
 
 // JobProgress holds aggregate progress info.
@@ -291,12 +291,10 @@ func (m *JobManager) cloneJobLocked(j *Job) *Job {
 		clone.Files = append([]JobFileProgress(nil), j.Files...)
 	}
 	if j.StartedAt != nil {
-		t := *j.StartedAt
-		clone.StartedAt = &t
+		clone.StartedAt = new(*j.StartedAt)
 	}
 	if j.EndedAt != nil {
-		t := *j.EndedAt
-		clone.EndedAt = &t
+		clone.EndedAt = new(*j.EndedAt)
 	}
 	return &clone
 }
@@ -407,8 +405,7 @@ func (m *JobManager) CancelJob(id string) bool {
 		job.cancel()
 	}
 	job.Status = JobStatusCancelled
-	now := time.Now()
-	job.EndedAt = &now
+	job.EndedAt = new(time.Now())
 	snapshot := m.cloneJobLocked(job)
 	m.mu.Unlock()
 	m.saveJobs()
@@ -744,8 +741,7 @@ func (m *JobManager) runJob(job *Job) {
 	job.generation++
 	myGeneration := job.generation // Track which generation we are
 	job.Status = JobStatusRunning
-	now := time.Now()
-	job.StartedAt = &now
+	job.StartedAt = new(time.Now())
 	startSnap := m.cloneJobLocked(job)
 	m.mu.Unlock()
 	m.saveJobs()
@@ -1008,8 +1004,7 @@ func finishRunStatusLocked(job *Job, myGeneration int, ctxErr, runErr error) boo
 	if job.Status == JobStatusPaused || job.Status == JobStatusQueued || job.generation != myGeneration {
 		return false
 	}
-	endTime := time.Now()
-	job.EndedAt = &endTime
+	job.EndedAt = new(time.Now())
 	job.Progress.Activity = ""
 	job.Progress.BytesPerSecond = 0
 	if ctxErr != nil {

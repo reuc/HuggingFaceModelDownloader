@@ -79,7 +79,7 @@ func walkPrefix[N Node](ctx context.Context, o Options, prefix string, visited m
 		err = json.NewDecoder(resp.Body).Decode(&nodes)
 		link := resp.Header.Get("Link")
 		reqURL := resp.Request.URL
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		if err != nil {
 			return fmt.Errorf("decode tree listing: %w", err)
 		}
@@ -151,15 +151,16 @@ func get(ctx context.Context, o Options, u string) (*http.Response, error) {
 			if err != nil {
 				return nil, err
 			}
-			defer resp.Body.Close()
-			return nil, o.Status(resp)
+			statusErr := o.Status(resp)
+			_ = resp.Body.Close()
+			return nil, statusErr
 		}
 		wait := backoff
 		if err == nil {
 			if d := serverWait(resp); d > 0 {
 				wait = d
 			}
-			resp.Body.Close()
+			_ = resp.Body.Close()
 		}
 		if wait > MaxWait {
 			wait = MaxWait
@@ -259,7 +260,7 @@ func List[T any](ctx context.Context, o Options, u string, max int, fn func(T) e
 		err = json.NewDecoder(resp.Body).Decode(&items)
 		link := resp.Header.Get("Link")
 		reqURL := resp.Request.URL
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		if err != nil {
 			return fmt.Errorf("decode listing: %w", err)
 		}

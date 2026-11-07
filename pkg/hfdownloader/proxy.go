@@ -6,6 +6,7 @@ package hfdownloader
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -179,6 +180,10 @@ func buildSOCKS5Client(proxyCfg *ProxyConfig) (*http.Client, error) {
 	if err != nil {
 		return nil, err
 	}
+	if proxyURL == nil {
+		// GetProxyURL returns nil, nil when no proxy URL is configured.
+		return nil, errors.New("SOCKS5 proxy URL is not configured")
+	}
 
 	// Parse SOCKS5 address
 	host := proxyURL.Host
@@ -335,7 +340,7 @@ func TestProxy(ctx context.Context, proxyCfg *ProxyConfig, testURL string) (*Pro
 			Error:    fmt.Sprintf("proxy connection failed: %v", err),
 		}, fmt.Errorf("proxy connection failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Any response (even 401/403) means the proxy is working
 	return &ProxyTestResult{
@@ -398,44 +403,40 @@ func GetProxyInfo() *ProxyInfo {
 	return info
 }
 
-// GetProxyInfoString returns a human-readable description of the proxy configuration.
+// GetProxyInfoString returns a human-readable description of the proxy
+// configuration, safe to print: any password is redacted.
 func GetProxyInfoString(proxyCfg *ProxyConfig) string {
 	if proxyCfg == nil || proxyCfg.URL == "" {
-		// Check environment
-		if httpProxy := os.Getenv("HTTP_PROXY"); httpProxy != "" {
-			return fmt.Sprintf("Environment: %s", httpProxy)
-		}
-		if httpProxy := os.Getenv("http_proxy"); httpProxy != "" {
-			return fmt.Sprintf("Environment: %s", httpProxy)
-		}
-		if httpsProxy := os.Getenv("HTTPS_PROXY"); httpsProxy != "" {
-			return fmt.Sprintf("Environment: %s", httpsProxy)
-		}
-		if httpsProxy := os.Getenv("https_proxy"); httpsProxy != "" {
-			return fmt.Sprintf("Environment: %s", httpsProxy)
+		for _, k := range []string{"HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy"} {
+			if v := os.Getenv(k); v != "" {
+				return "Environment: " + redactProxyURL(v)
+			}
 		}
 		return "None (direct connection)"
 	}
 
-	// Parse URL to hide password
 	u, err := url.Parse(proxyCfg.URL)
 	if err != nil {
-		return proxyCfg.URL
+		return redactProxyURL(proxyCfg.URL)
 	}
-
-	// Apply auth if separate
+	// Credentials given separately are shown as if they were in the URL.
 	if u.User == nil && proxyCfg.Username != "" {
 		if proxyCfg.Password != "" {
-			u.User = url.UserPassword(proxyCfg.Username, "****")
+			u.User = url.UserPassword(proxyCfg.Username, proxyCfg.Password)
 		} else {
 			u.User = url.User(proxyCfg.Username)
 		}
-	} else if u.User != nil {
-		// Mask existing password
-		if _, hasPass := u.User.Password(); hasPass {
-			u.User = url.UserPassword(u.User.Username(), "****")
-		}
 	}
+	return u.Redacted()
+}
 
-	return u.String()
+// redactProxyURL returns raw with any password replaced by "xxxxx". A value
+// that can't be parsed as a URL with credentials, yet contains an '@', is not
+// shown at all: whatever precedes the '@' may be a password.
+func redactProxyURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || (u.User == nil && strings.Contains(raw, "@")) {
+		return "(set; not shown because it may contain credentials)"
+	}
+	return u.Redacted()
 }

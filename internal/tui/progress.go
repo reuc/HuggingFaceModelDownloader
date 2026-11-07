@@ -95,7 +95,7 @@ func NewLiveRenderer(job hfdownloader.Job, cfg hfdownloader.Settings) *LiveRende
 	lr.supports = isInteractive() && ansiOkay()
 	if lr.supports && !lr.noColor {
 		// Hide cursor
-		fmt.Fprint(os.Stdout, "\x1b[?25l")
+		_, _ = fmt.Fprint(os.Stdout, "\x1b[?25l")
 		lr.hideCur = true
 	}
 	go lr.loop()
@@ -115,10 +115,10 @@ func (lr *LiveRenderer) Close() {
 	// Wait a tick
 	time.Sleep(60 * time.Millisecond)
 	if lr.hideCur {
-		fmt.Fprint(os.Stdout, "\x1b[?25h") // show cursor
+		_, _ = fmt.Fprint(os.Stdout, "\x1b[?25h") // show cursor
 	}
 	// Final newline to separate from prompt
-	fmt.Fprintln(os.Stdout)
+	_, _ = fmt.Fprintln(os.Stdout)
 }
 
 // Handler returns a ProgressFunc that feeds events to the renderer.
@@ -149,12 +149,12 @@ func (lr *LiveRenderer) loop() {
 	for {
 		select {
 		case <-lr.done:
-			lr.render(true)
+			lr.render()
 			return
 		case ev := <-lr.events:
 			lr.apply(ev)
 		case <-ticker.C:
-			lr.render(false)
+			lr.render()
 		}
 	}
 }
@@ -236,7 +236,7 @@ func (lr *LiveRenderer) ensure(path string) *fileState {
 	return fs
 }
 
-func (lr *LiveRenderer) render(final bool) {
+func (lr *LiveRenderer) render() {
 	lr.mu.Lock()
 	defer lr.mu.Unlock()
 
@@ -316,7 +316,7 @@ func (lr *LiveRenderer) render(final bool) {
 	// Clear + render (ANSI) or plain
 	if lr.supports {
 		// Clear screen and go home
-		fmt.Fprint(os.Stdout, "\x1b[H\x1b[2J")
+		_, _ = fmt.Fprint(os.Stdout, "\x1b[H\x1b[2J")
 	}
 
 	// Header
@@ -325,10 +325,10 @@ func (lr *LiveRenderer) render(final bool) {
 		rev = "main"
 	}
 	jobline := fmt.Sprintf("Repo: %s   Rev: %s   Dataset: %v", lr.job.Repo, rev, lr.job.IsDataset)
-	fmt.Fprintln(os.Stdout, colorize(bold(jobline), "fg=cyan", lr))
+	_, _ = fmt.Fprintln(os.Stdout, colorize(bold(jobline), "fg=cyan", lr))
 	cfgline := fmt.Sprintf("Out: %s   Conns: %d   MaxActive: %d   Verify: %s   Retries: %d   Threshold: %s",
 		lr.cfg.OutputDir, lr.cfg.Concurrency, lr.cfg.MaxActiveDownloads, lr.cfg.Verify, lr.cfg.Retries, lr.cfg.MultipartThreshold)
-	fmt.Fprintln(os.Stdout, dim(cfgline))
+	_, _ = fmt.Fprintln(os.Stdout, dim(cfgline))
 
 	// Totals line with bar
 	prog := float64(0)
@@ -341,9 +341,9 @@ func (lr *LiveRenderer) render(final bool) {
 			prog = 1
 		}
 	}
-	bar := renderBar(int(float64(w)*0.4), prog, lr) // 40% of width
+	bar := renderBar(int(float64(w)*0.4), prog) // 40% of width
 	speedStr := humanBytes(int64(speed)) + "/s"
-	fmt.Fprintf(os.Stdout, "%s  %s  %s/%s  %s  ETA %s\n",
+	_, _ = fmt.Fprintf(os.Stdout, "%s  %s  %s/%s  %s  ETA %s\n",
 		colorize(bar, "fg=green", lr),
 		percent(prog),
 		humanBytes(aggBytes), humanBytes(lr.totalBytes),
@@ -351,9 +351,9 @@ func (lr *LiveRenderer) render(final bool) {
 	)
 
 	// Table header
-	fmt.Fprintln(os.Stdout)
+	_, _ = fmt.Fprintln(os.Stdout)
 	cols := []string{"Status", "File", "Progress", "Speed", "ETA"}
-	fmt.Fprintln(os.Stdout, headerRow(cols, w))
+	_, _ = fmt.Fprintln(os.Stdout, headerRow(cols, w))
 
 	// Determine rows to show
 	maxRows := h - 8 // header+totals+footer allowance
@@ -371,7 +371,7 @@ func (lr *LiveRenderer) render(final bool) {
 			break
 		}
 		shown++
-		fmt.Fprintln(os.Stdout, renderFileRow(fs, w, lr))
+		_, _ = fmt.Fprintln(os.Stdout, renderFileRow(fs, w, lr))
 	}
 
 	// If space remains, show recently finished or queued small set
@@ -387,14 +387,14 @@ func (lr *LiveRenderer) render(final bool) {
 			if shown >= maxRows {
 				break
 			}
-			fmt.Fprintln(os.Stdout, renderFileRow(fs, w, lr))
+			_, _ = fmt.Fprintln(os.Stdout, renderFileRow(fs, w, lr))
 			shown++
 		}
 	}
 
 	// Footer hint
 	if lr.supports {
-		fmt.Fprintln(os.Stdout, dim(fmt.Sprintf("Press Ctrl+C to cancel • %s %s",
+		_, _ = fmt.Fprintln(os.Stdout, dim(fmt.Sprintf("Press Ctrl+C to cancel • %s %s",
 			runtime.GOOS, runtime.GOARCH)))
 	}
 }
@@ -462,7 +462,7 @@ func renderFileRow(fs *fileState, w int, lr *LiveRenderer) string {
 			p = 1
 		}
 	}
-	bar := renderBar(progressW-18, p, lr) // leave room for numbers
+	bar := renderBar(progressW-18, p) // leave room for numbers
 	progTxt := fmt.Sprintf(" %s/%s %s", humanBytes(fs.bytes), humanBytes(fs.total), percent(p))
 	if stagePhase {
 		verb := "verifying"
@@ -544,7 +544,7 @@ func pad(s string, w int) string {
 	return s + strings.Repeat(" ", w-r)
 }
 
-func renderBar(width int, p float64, lr *LiveRenderer) string {
+func renderBar(width int, p float64) string {
 	if width < 3 {
 		width = 3
 	}

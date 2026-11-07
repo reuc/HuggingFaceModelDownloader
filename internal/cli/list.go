@@ -160,13 +160,16 @@ func scanCacheStructure(cacheDir, filterType string) ([]ListEntry, error) {
 		blobsDir := filepath.Join(hubDir, name, "blobs")
 		var totalSize int64
 		var fileCount int
-		filepath.Walk(blobsDir, func(path string, info os.FileInfo, err error) error {
+		err = filepath.Walk(blobsDir, func(path string, info os.FileInfo, err error) error {
 			if err == nil && !info.IsDir() {
 				totalSize += info.Size()
 				fileCount++
 			}
 			return nil
 		})
+		if err != nil {
+			return nil, err
+		}
 
 		// Try to read commit from refs/main
 		var commit string

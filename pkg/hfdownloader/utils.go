@@ -119,7 +119,7 @@ func validRepoIDPart(s string) bool {
 // validate checks that the job and settings are valid.
 func validate(job Job, cfg Settings) error {
 	if job.Repo == "" {
-		return errors.New("missing repo")
+		return ErrMissingRepo
 	}
 	if !IsValidModelName(job.Repo) {
 		return fmt.Errorf("invalid repo id %q (expected owner/name)", job.Repo)
@@ -169,19 +169,19 @@ type backoff struct {
 // newRetry creates a new backoff instance from settings.
 func newRetry(cfg Settings) *backoff {
 	init := 400 * time.Millisecond
-	max := 10 * time.Second
+	maxDelay := 10 * time.Second
 	if d, err := time.ParseDuration(defaultString(cfg.BackoffInitial, "400ms")); err == nil {
 		init = d
 	}
 	if d, err := time.ParseDuration(defaultString(cfg.BackoffMax, "10s")); err == nil {
-		max = d
+		maxDelay = d
 	}
-	return &backoff{next: init, max: max, mult: 1.6, jitter: 120 * time.Millisecond}
+	return &backoff{next: init, max: maxDelay, mult: 1.6, jitter: 120 * time.Millisecond}
 }
 
 // Next returns the next backoff duration.
 func (b *backoff) Next() time.Duration {
-	d := b.next + time.Duration(int64(b.jitter)*int64(time.Now().UnixNano()%3)/2)
+	d := b.next + time.Duration(int64(b.jitter)*(time.Now().UnixNano()%3)/2)
 	b.next = time.Duration(float64(b.next) * b.mult)
 	if b.next > b.max {
 		b.next = b.max

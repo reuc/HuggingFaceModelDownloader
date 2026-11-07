@@ -26,30 +26,30 @@ func fakeSummaryHub(t *testing.T, trees map[string][]map[string]any, raw map[str
 				http.NotFound(w, r)
 				return
 			}
-			json.NewEncoder(w).Encode(tree)
+			_ = json.NewEncoder(w).Encode(tree)
 		case strings.HasPrefix(p, "/api/datasets/") && strings.HasSuffix(p, "/tree/main"):
 			repo := strings.TrimSuffix(strings.TrimPrefix(p, "/api/datasets/"), "/tree/main")
 			if !datasets[repo] {
 				http.NotFound(w, r)
 				return
 			}
-			json.NewEncoder(w).Encode([]map[string]any{{"type": "file", "path": "data/train.parquet", "size": 100}})
+			_ = json.NewEncoder(w).Encode([]map[string]any{{"type": "file", "path": "data/train.parquet", "size": 100}})
 		case strings.HasSuffix(p, "/refs"):
-			w.Write([]byte(`{"branches":[{"name":"main","targetCommit":"abc"}],"tags":[]}`))
+			_, _ = w.Write([]byte(`{"branches":[{"name":"main","targetCommit":"abc"}],"tags":[]}`))
 		case strings.HasPrefix(p, "/api/models/"):
 			body, ok := modelInfo[strings.TrimPrefix(p, "/api/models/")]
 			if !ok {
 				http.NotFound(w, r)
 				return
 			}
-			w.Write([]byte(body))
+			_, _ = w.Write([]byte(body))
 		default:
 			body, ok := raw[p]
 			if !ok {
 				http.NotFound(w, r)
 				return
 			}
-			w.Write([]byte(body))
+			_, _ = w.Write([]byte(body))
 		}
 	}))
 }

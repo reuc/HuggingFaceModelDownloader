@@ -131,7 +131,7 @@ func (a *Analyzer) authorExists(ctx context.Context, author string) bool {
 		if err != nil {
 			return true // can't tell: don't claim it is missing
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		if resp.StatusCode == http.StatusOK {
 			return true
 		}

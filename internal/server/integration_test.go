@@ -17,42 +17,56 @@ import (
 )
 
 // getFreePort finds an available port
-func getFreePort() int {
-	l, _ := net.Listen("tcp", "127.0.0.1:0")
-	defer l.Close()
+func getFreePort(t *testing.T) int {
+	t.Helper()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("find a free port: %v", err)
+	}
+	defer func() { _ = l.Close() }()
 	return l.Addr().(*net.TCPAddr).Port
+}
+
+// startIntegrationServer runs a server built from cfg (on a free local port)
+// until the test ends, then stops it and fails the test if it didn't exit
+// cleanly. It returns the server's base URL.
+func startIntegrationServer(t *testing.T, cfg Config) string {
+	t.Helper()
+	cfg.Addr = "127.0.0.1"
+	cfg.Port = getFreePort(t)
+	srv := New(cfg)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	errc := make(chan error, 1)
+	go func() { errc <- srv.ListenAndServe(ctx) }()
+	t.Cleanup(func() {
+		cancel()
+		if err := <-errc; err != nil {
+			t.Errorf("server: %v", err)
+		}
+	})
+
+	time.Sleep(200 * time.Millisecond)
+	return "http://127.0.0.1:" + strconv.Itoa(cfg.Port)
 }
 
 // These tests require network access and actually download from HuggingFace.
 // Run with: go test -tags=integration -v ./internal/server/
 
 func TestIntegration_FullDownloadFlow(t *testing.T) {
-	port := getFreePort()
-	cfg := Config{
-		Addr:        "127.0.0.1",
-		Port:        port,
+	baseURL := startIntegrationServer(t, Config{
 		ModelsDir:   t.TempDir(),
 		DatasetsDir: t.TempDir(),
 		Concurrency: 4,
 		MaxActive:   2,
-	}
-
-	srv := New(cfg)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	// Start server in background
-	go srv.ListenAndServe(ctx)
-	time.Sleep(200 * time.Millisecond)
-
-	baseURL := "http://127.0.0.1:" + strconv.Itoa(port)
+	})
 
 	t.Run("health check", func(t *testing.T) {
 		resp, err := http.Get(baseURL + "/api/health")
 		if err != nil {
 			t.Fatalf("Health check failed: %v", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode != 200 {
 			t.Errorf("Expected 200, got %d", resp.StatusCode)
@@ -70,14 +84,16 @@ func TestIntegration_FullDownloadFlow(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Start download failed: %v", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode != 202 {
 			t.Fatalf("Expected 202, got %d", resp.StatusCode)
 		}
 
 		var job Job
-		json.NewDecoder(resp.Body).Decode(&job)
+		if err := json.NewDecoder(resp.Body).Decode(&job); err != nil {
+			t.Fatalf("decode job: %v", err)
+		}
 
 		if job.ID == "" {
 			t.Error("Job ID should not be empty")
@@ -93,10 +109,16 @@ func TestIntegration_FullDownloadFlow(t *testing.T) {
 			case <-timeout:
 				t.Fatal("Download timed out")
 			case <-ticker.C:
-				jobResp, _ := http.Get(baseURL + "/api/jobs/" + job.ID)
+				jobResp, err := http.Get(baseURL + "/api/jobs/" + job.ID)
+				if err != nil {
+					t.Fatalf("get job: %v", err)
+				}
 				var current Job
-				json.NewDecoder(jobResp.Body).Decode(&current)
-				jobResp.Body.Close()
+				err = json.NewDecoder(jobResp.Body).Decode(&current)
+				_ = jobResp.Body.Close()
+				if err != nil {
+					t.Fatalf("decode job: %v", err)
+				}
 
 				t.Logf("Job status: %s, progress: %d/%d files",
 					current.Status, current.Progress.CompletedFiles, current.Progress.TotalFiles)
@@ -114,22 +136,10 @@ func TestIntegration_FullDownloadFlow(t *testing.T) {
 }
 
 func TestIntegration_DryRun(t *testing.T) {
-	port := getFreePort()
-	cfg := Config{
-		Addr:        "127.0.0.1",
-		Port:        port,
+	baseURL := startIntegrationServer(t, Config{
 		ModelsDir:   t.TempDir(),
 		DatasetsDir: t.TempDir(),
-	}
-
-	srv := New(cfg)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	go srv.ListenAndServe(ctx)
-	time.Sleep(200 * time.Millisecond)
-
-	baseURL := "http://127.0.0.1:" + strconv.Itoa(port)
+	})
 
 	body := `{"repo": "hf-internal-testing/tiny-random-gpt2"}`
 	resp, err := http.Post(
@@ -140,14 +150,16 @@ func TestIntegration_DryRun(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Plan request failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 200 {
 		t.Fatalf("Expected 200, got %d", resp.StatusCode)
 	}
 
 	var plan PlanResponse
-	json.NewDecoder(resp.Body).Decode(&plan)
+	if err := json.NewDecoder(resp.Body).Decode(&plan); err != nil {
+		t.Fatalf("decode plan: %v", err)
+	}
 
 	if plan.TotalFiles == 0 {
 		t.Error("Expected files in plan")

@@ -7,10 +7,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/reuc/HuggingFaceModelDownloader/internal/testutil"
 	"github.com/reuc/HuggingFaceModelDownloader/pkg/hfdownloader"
 )
 
@@ -307,11 +307,8 @@ func TestApplySettingsDefaults(t *testing.T) {
 
 	t.Run("no config file", func(t *testing.T) {
 		// Use temp directory without any config
-		origHome := os.Getenv("HOME")
-		defer os.Setenv("HOME", origHome)
-
 		tmpDir := t.TempDir()
-		os.Setenv("HOME", tmpDir)
+		t.Setenv("HOME", tmpDir)
 
 		ro := &RootOpts{}
 		cfg := &hfdownloader.Settings{}
@@ -336,7 +333,7 @@ func TestApplySettingsDefaults(t *testing.T) {
 	t.Run("invalid JSON content", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		configPath := filepath.Join(tmpDir, "bad.json")
-		os.WriteFile(configPath, []byte("{ invalid json"), 0o644)
+		testutil.WriteFile(t, configPath, []byte("{ invalid json"), 0o644)
 
 		ro := &RootOpts{Config: configPath}
 		cfg := &hfdownloader.Settings{}
@@ -350,7 +347,7 @@ func TestApplySettingsDefaults(t *testing.T) {
 	t.Run("invalid YAML content", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		configPath := filepath.Join(tmpDir, "bad.yaml")
-		os.WriteFile(configPath, []byte("invalid: yaml: content: ["), 0o644)
+		testutil.WriteFile(t, configPath, []byte("invalid: yaml: content: ["), 0o644)
 
 		ro := &RootOpts{Config: configPath}
 		cfg := &hfdownloader.Settings{}

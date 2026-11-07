@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,7 +11,7 @@ import (
 	"time"
 )
 
-// Windows symlink warning - only show once per session
+// RepoType is the kind of Hugging Face Hub repository: a model or a dataset.
 type RepoType string
 
 const (
@@ -574,7 +573,9 @@ func (r *RepoDir) StoreDownloadedFile(tempFile, relativePath, commit, sha256, fi
 	// Check if blob already exists (deduplication)
 	if _, err := os.Stat(blobPath); err == nil {
 		// Blob exists, just remove temp file
-		os.Remove(tempFile)
+		if err := removeTempFile(tempFile); err != nil {
+			return nil, err
+		}
 	} else {
 		// Move temp file to blob location
 		if err := os.MkdirAll(filepath.Dir(blobPath), 0755); err != nil {
@@ -585,7 +586,9 @@ func (r *RepoDir) StoreDownloadedFile(tempFile, relativePath, commit, sha256, fi
 			if err := copyFile(tempFile, blobPath); err != nil {
 				return nil, fmt.Errorf("move file to blob: %w", err)
 			}
-			os.Remove(tempFile)
+			if err := removeTempFile(tempFile); err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -617,22 +620,21 @@ func (r *RepoDir) StoreDownloadedFile(tempFile, relativePath, commit, sha256, fi
 	return result, nil
 }
 
-// copyFile copies a file from src to dst.
+// removeTempFile deletes a downloaded temp file whose data is now in the
+// blob store. A leftover would sit in blobs/ looking like an unfinished
+// download (see isPartialName), so a failure is reported, not ignored.
+func removeTempFile(tempFile string) error {
+	if err := os.Remove(tempFile); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("remove temp file: %w", err)
+	}
+	return nil
+}
+
+// copyFile copies a file from src to dst (StoreDownloadedFile's fallback when
+// the temp file can't be renamed into blobs/). It goes through CopyFileStream,
+// which writes a temp file and renames it into place: dst is a blob path, and
+// any file there counts as a complete blob (CheckBlob), so a failed or
+// in-progress copy must never be visible at it.
 func copyFile(src, dst string) error {
-	in, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-
-	out, err := os.Create(dst)
-	if err != nil {
-		return err
-	}
-	defer out.Close()
-
-	if _, err := io.Copy(out, in); err != nil {
-		return err
-	}
-	return out.Close()
+	return CopyFileStream(src, dst)
 }

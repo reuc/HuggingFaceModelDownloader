@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -108,7 +110,7 @@ type SuccessResponse struct {
 // --- Handlers ---
 
 // handleHealth returns server health status.
-func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status":  "ok",
 		"version": s.version(),
@@ -129,20 +131,7 @@ func (s *Server) handleStartDownload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "Missing required field: repo", "")
 		return
 	}
-
-	// Parse filters from repo:filter syntax
-	if strings.Contains(req.Repo, ":") && len(req.Filters) == 0 {
-		parts := strings.SplitN(req.Repo, ":", 2)
-		req.Repo = parts[0]
-		if parts[1] != "" {
-			for _, f := range strings.Split(parts[1], ",") {
-				f = strings.TrimSpace(f)
-				if f != "" {
-					req.Filters = append(req.Filters, f)
-				}
-			}
-		}
-	}
+	splitRepoFilters(&req)
 
 	if !hfdownloader.IsValidModelName(req.Repo) {
 		writeError(w, http.StatusBadRequest, "Invalid repo format", "Expected owner/name")
@@ -196,20 +185,7 @@ func (s *Server) handlePlanInternal(w http.ResponseWriter, req DownloadRequest) 
 		writeError(w, http.StatusBadRequest, "Missing required field: repo", "")
 		return
 	}
-
-	// Parse filters from repo:filter syntax
-	if strings.Contains(req.Repo, ":") && len(req.Filters) == 0 {
-		parts := strings.SplitN(req.Repo, ":", 2)
-		req.Repo = parts[0]
-		if parts[1] != "" {
-			for _, f := range strings.Split(parts[1], ",") {
-				f = strings.TrimSpace(f)
-				if f != "" {
-					req.Filters = append(req.Filters, f)
-				}
-			}
-		}
-	}
+	splitRepoFilters(&req)
 
 	revision := req.Revision
 	if revision == "" {
@@ -286,8 +262,27 @@ func (s *Server) handlePlanInternal(w http.ResponseWriter, req DownloadRequest) 
 	writeJSON(w, http.StatusOK, resp)
 }
 
+// splitRepoFilters applies the "owner/name:filter1,filter2" shorthand: when
+// the request has no explicit filters, everything after the first ":" in
+// Repo is split off into comma-separated Filters.
+func splitRepoFilters(req *DownloadRequest) {
+	if !strings.Contains(req.Repo, ":") || len(req.Filters) != 0 {
+		return
+	}
+	parts := strings.SplitN(req.Repo, ":", 2)
+	req.Repo = parts[0]
+	if parts[1] != "" {
+		for _, f := range strings.Split(parts[1], ",") {
+			f = strings.TrimSpace(f)
+			if f != "" {
+				req.Filters = append(req.Filters, f)
+			}
+		}
+	}
+}
+
 // handleListJobs returns all jobs.
-func (s *Server) handleListJobs(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleListJobs(w http.ResponseWriter, _ *http.Request) {
 	jobs := s.jobs.ListJobs()
 	writeJSON(w, http.StatusOK, map[string]any{
 		"jobs":  jobs,
@@ -433,7 +428,7 @@ func (s *Server) handleMoveJobToTop(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleGetSettings returns current settings.
-func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleGetSettings(w http.ResponseWriter, _ *http.Request) {
 	// Read a consistent snapshot so we never observe a field mid-update.
 	cfg := s.settingsConfig()
 
@@ -710,7 +705,11 @@ func hubErrorStatus(err error) int {
 func writeJSON(w http.ResponseWriter, status int, data any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(data)
+	// The status line is already sent, so a failed encode/write can only be
+	// logged (usually the client went away).
+	if err := json.NewEncoder(w).Encode(data); err != nil {
+		log.Printf("warning: could not write JSON response: %v", err)
+	}
 }
 
 func writeError(w http.ResponseWriter, status int, message, details string) {
@@ -948,7 +947,9 @@ func (s *Server) handleCacheList(w http.ResponseWriter, r *http.Request) {
 			totalSize, fileCount = total, len(names)
 			repoPath = rd.FriendlyPath()
 		} else {
-			filepath.Walk(blobsDir, func(path string, info os.FileInfo, err error) error {
+			// Best effort: unreadable entries are skipped and the callback
+			// never returns an error, so Walk can't fail.
+			_ = filepath.Walk(blobsDir, func(path string, info os.FileInfo, err error) error {
 				if err == nil && !info.IsDir() && !strings.HasSuffix(path, ".incomplete") && !strings.HasSuffix(path, ".meta") {
 					totalSize += info.Size()
 					fileCount++
@@ -1119,7 +1120,9 @@ func (s *Server) handleCacheInfo(w http.ResponseWriter, r *http.Request) {
 		// If we have snapshots, walk the latest one to get file names
 		// Use the first snapshot (usually the most recent)
 		snapshotDir := repoDir.SnapshotDir(snapshots[0])
-		filepath.Walk(snapshotDir, func(path string, info os.FileInfo, err error) error {
+		// Best effort: unreadable or dangling entries are skipped and the
+		// callback never returns an error, so Walk can't fail.
+		_ = filepath.Walk(snapshotDir, func(path string, info os.FileInfo, err error) error {
 			if err != nil || info.IsDir() {
 				return nil
 			}
@@ -1143,8 +1146,9 @@ func (s *Server) handleCacheInfo(w http.ResponseWriter, r *http.Request) {
 			return nil
 		})
 	} else {
-		// No snapshots, just count blobs
-		filepath.Walk(blobsDir, func(path string, info os.FileInfo, err error) error {
+		// No snapshots, just count blobs. Best effort: unreadable entries are
+		// skipped and the callback never returns an error, so Walk can't fail.
+		_ = filepath.Walk(blobsDir, func(path string, info os.FileInfo, err error) error {
 			if err == nil && !info.IsDir() && !strings.HasSuffix(path, ".incomplete") && !strings.HasSuffix(path, ".meta") {
 				totalSize += info.Size()
 				files = append(files, CachedFileInfo{
@@ -1259,7 +1263,13 @@ func (s *Server) handleCacheRebuild(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Clean bool `json:"clean"` // Remove orphaned symlinks
 	}
-	json.NewDecoder(r.Body).Decode(&req) // Ignore errors, use defaults
+	// The body is optional: an empty one (io.EOF) means the defaults. A
+	// malformed one used to be ignored too, silently running a rebuild
+	// without the cleanup the client asked for.
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+		writeError(w, http.StatusBadRequest, "Invalid request body", err.Error())
+		return
+	}
 
 	cache := hfdownloader.NewHFCache(cacheDir, hfdownloader.DefaultStaleTimeout)
 
@@ -1297,12 +1307,6 @@ func (s *Server) handleCacheRebuild(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
-// handleCacheDelete deletes a repository from the cache.
-// SECURITY: This endpoint requires extensive validation to prevent:
-// - Path traversal attacks (../, encoded variants)
-// - Symlink attacks (symlinks pointing outside cache)
-// - TOCTOU race conditions
-// - Directory escape via prefix manipulation
 // CacheFlattenRequest asks to convert a cached repo to flat storage: real
 // files in models/ or datasets/, no hub/ entry (hfdownloader flatten).
 type CacheFlattenRequest struct {
@@ -1426,6 +1430,12 @@ func (s *Server) handleCacheExport(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, res)
 }
 
+// handleCacheDelete deletes a repository from the cache.
+// SECURITY: This endpoint requires extensive validation to prevent:
+// - Path traversal attacks (../, encoded variants)
+// - Symlink attacks (symlinks pointing outside cache)
+// - TOCTOU race conditions
+// - Directory escape via prefix manipulation
 func (s *Server) handleCacheDelete(w http.ResponseWriter, r *http.Request) {
 	if repo := r.PathValue("repo"); repo != "" && s.jobs.HasActiveJob(repo, r.URL.Query().Get("type") == "dataset") {
 		// Deleting files under a running download made the job fail with
@@ -1652,8 +1662,8 @@ func storageName(flat bool) string {
 // realDirWithSep returns dir with symlinks resolved (dir itself when that
 // fails) and a trailing separator, for prefix checks on resolved paths.
 func realDirWithSep(dir string) string {
-	if real, err := filepath.EvalSymlinks(dir); err == nil {
-		dir = real
+	if resolved, err := filepath.EvalSymlinks(dir); err == nil {
+		dir = resolved
 	}
 	return dir + string(filepath.Separator)
 }

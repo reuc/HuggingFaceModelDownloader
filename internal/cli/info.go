@@ -114,7 +114,7 @@ func findRepoInfo(cacheDir, query string) (*RepoInfo, error) {
 			continue
 		}
 
-		filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 			if err != nil || info.IsDir() || info.Name() != hfdownloader.ManifestFilename {
 				return nil
 			}
@@ -131,6 +131,9 @@ func findRepoInfo(cacheDir, query string) (*RepoInfo, error) {
 			}
 			return nil
 		})
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	if len(matches) == 0 {

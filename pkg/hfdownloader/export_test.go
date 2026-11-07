@@ -14,6 +14,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/reuc/HuggingFaceModelDownloader/internal/testutil"
 )
 
 // simulateLinks replaces the link functions for one test: noSymlink mimics
@@ -152,7 +154,7 @@ func TestExport_CopiesByDefault(t *testing.T) {
 	if sameFile(exported, rd.SnapshotPath(commit, "model.gguf")) {
 		t.Fatal("default export shares data with the cache")
 	}
-	os.WriteFile(exported, []byte("edited"), 0o644)
+	testutil.WriteFile(t, exported, []byte("edited"), 0o644)
 	if !bytes.Equal(readFile(t, rd.SnapshotPath(commit, "model.gguf")), files["model.gguf"]) {
 		t.Error("editing the export changed the cache")
 	}
@@ -235,9 +237,9 @@ func TestExport_AndRepair_LinklessCache(t *testing.T) {
 		t.Error("content mismatch")
 	}
 
-	sync, err := cache.Sync(SyncOptions{})
-	if err != nil || sync.SnapshotEntriesRepaired != 2 {
-		t.Fatalf("Sync = %+v, %v; want 2 repaired entries", sync, err)
+	report, err := cache.Sync(SyncOptions{})
+	if err != nil || report.SnapshotEntriesRepaired != 2 {
+		t.Fatalf("Sync = %+v, %v; want 2 repaired entries", report, err)
 	}
 	for rel, want := range files {
 		if !bytes.Equal(readFile(t, rd.SnapshotPath(commit, rel)), want) {
@@ -276,8 +278,8 @@ func TestLinkSupport(t *testing.T) {
 func TestExport_RejectsRevisionTraversal(t *testing.T) {
 	cache, rd, _, _ := downloadFake(t, Settings{})
 	secret := filepath.Join(filepath.Dir(cache.Root), "secret")
-	os.MkdirAll(secret, 0o755)
-	os.WriteFile(filepath.Join(secret, "key.txt"), []byte("TOPSECRET"), 0o644)
+	testutil.MkdirAll(t, secret, 0o755)
+	testutil.WriteFile(t, filepath.Join(secret, "key.txt"), []byte("TOPSECRET"), 0o644)
 
 	for _, rev := range []string{"../../../../secret", "../../../../secret/key.txt", "/etc", `..\..\x`, "a/../../b", "main\x00"} {
 		dest := t.TempDir()

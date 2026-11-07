@@ -7,6 +7,7 @@ package server
 import (
 	"context"
 	"crypto/subtle"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log"
@@ -176,7 +177,10 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		s.httpServer.Shutdown(shutdownCtx)
+		if err := s.httpServer.Shutdown(shutdownCtx); err != nil {
+			// Typically the timeout: some connections were still active.
+			log.Printf("warning: server shutdown: %v", err)
+		}
 		// Halt the WebSocket broadcast coalescer so its pending AfterFunc
 		// timers don't fire (and leak) after the server has stopped.
 		s.jobs.Stop()
@@ -190,7 +194,7 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	}
 
 	err := s.httpServer.ListenAndServe()
-	if err == http.ErrServerClosed {
+	if errors.Is(err, http.ErrServerClosed) {
 		return nil
 	}
 	return err
@@ -232,7 +236,9 @@ func (s *Server) handler() http.Handler {
 				contentType = "image/svg+xml"
 			}
 			w.Header().Set("Content-Type", contentType)
-			w.Write(f)
+			if _, err := w.Write(f); err != nil {
+				log.Printf("warning: could not write %s: %v", path, err)
+			}
 			return
 		}
 

@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/reuc/HuggingFaceModelDownloader/internal/testutil"
 )
 
 func TestNewServeCmd(t *testing.T) {
@@ -73,7 +75,7 @@ func TestServerConfig_CacheDir(t *testing.T) {
 	t.Run("uses provided cache dir", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		cacheDir := filepath.Join(tmpDir, "server-cache")
-		os.MkdirAll(cacheDir, 0o755)
+		testutil.MkdirAll(t, cacheDir, 0o755)
 
 		info, err := os.Stat(cacheDir)
 		if err != nil {

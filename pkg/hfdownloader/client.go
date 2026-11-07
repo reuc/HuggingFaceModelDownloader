@@ -73,7 +73,7 @@ func headForETag(ctx context.Context, httpc *http.Client, token string, it PlanI
 	if err != nil {
 		return "", "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	return resp.Header.Get("ETag"), resp.Header.Get("x-amz-meta-sha256"), nil
 }
 
@@ -184,7 +184,7 @@ func fetchRepoInfo(ctx context.Context, httpc *http.Client, token, endpoint stri
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 200 {
 		return nil, &APIError{StatusCode: resp.StatusCode, Status: resp.Status, URL: reqURL}

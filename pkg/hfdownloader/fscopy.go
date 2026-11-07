@@ -21,7 +21,7 @@ func CopyFileStream(src, dst string) error {
 	if err != nil {
 		return err
 	}
-	defer in.Close()
+	defer func() { _ = in.Close() }()
 
 	info, err := in.Stat()
 	if err != nil {
@@ -37,10 +37,12 @@ func CopyFileStream(src, dst string) error {
 		return err
 	}
 	tmpName := tmp.Name()
-	// Best-effort cleanup if we bail before the rename.
+	// Best-effort cleanup if we bail before the rename. On success tmp is
+	// already closed (its Close error checked below) and renamed away, so
+	// both calls are no-ops.
 	defer func() {
-		tmp.Close()
-		os.Remove(tmpName)
+		_ = tmp.Close()
+		_ = os.Remove(tmpName)
 	}()
 
 	if _, err := io.Copy(tmp, in); err != nil {

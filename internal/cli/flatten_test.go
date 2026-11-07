@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/reuc/HuggingFaceModelDownloader/internal/testutil"
 	"github.com/reuc/HuggingFaceModelDownloader/pkg/hfdownloader"
 )
 
@@ -19,8 +20,8 @@ func writeFlatRepo(t *testing.T, cacheDir, kind, repo string) string {
 	if err := os.MkdirAll(filepath.Join(dir, "sub"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	os.WriteFile(filepath.Join(dir, "config.json"), []byte(`{}`), 0o644)
-	os.WriteFile(filepath.Join(dir, "sub", "w.bin"), make([]byte, 10), 0o644)
+	testutil.WriteFile(t, filepath.Join(dir, "config.json"), []byte(`{}`), 0o644)
+	testutil.WriteFile(t, filepath.Join(dir, "sub", "w.bin"), make([]byte, 10), 0o644)
 	typ := "model"
 	if kind == "datasets" {
 		typ = "dataset"
@@ -28,7 +29,7 @@ func writeFlatRepo(t *testing.T, cacheDir, kind, repo string) string {
 	manifest := "version: \"1.0\"\ntype: " + typ + "\nrepo: " + repo + "\nbranch: main\ncommit: 1111111111111111111111111111111111111111\nstorage: flat\nrepo_path: \"\"\ntotal_size: 12\ntotal_files: 2\nfiles:\n" +
 		"  - {name: config.json, blob: blobs/" + zeros(64) + ", size: 2, lfs: false}\n" +
 		"  - {name: sub/w.bin, blob: blobs/" + zeros(64) + ", size: 10, lfs: false}\n"
-	os.WriteFile(filepath.Join(dir, hfdownloader.ManifestFilename), []byte(manifest), 0o644)
+	testutil.WriteFile(t, filepath.Join(dir, hfdownloader.ManifestFilename), []byte(manifest), 0o644)
 	return dir
 }
 

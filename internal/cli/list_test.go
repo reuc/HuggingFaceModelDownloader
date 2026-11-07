@@ -4,13 +4,13 @@
 package cli
 
 import (
-	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/reuc/HuggingFaceModelDownloader/internal/testutil"
 	"github.com/reuc/HuggingFaceModelDownloader/pkg/hfdownloader"
 )
 
@@ -170,16 +170,16 @@ func TestScanCacheStructure(t *testing.T) {
 		modelDir := filepath.Join(hubDir, "models--owner--model1")
 		blobsDir := filepath.Join(modelDir, "blobs")
 		refsDir := filepath.Join(modelDir, "refs")
-		os.MkdirAll(blobsDir, 0o755)
-		os.MkdirAll(refsDir, 0o755)
-		os.WriteFile(filepath.Join(blobsDir, "abc123"), []byte("blob content"), 0o644)
-		os.WriteFile(filepath.Join(refsDir, "main"), []byte("abc123def456"), 0o644)
+		testutil.MkdirAll(t, blobsDir, 0o755)
+		testutil.MkdirAll(t, refsDir, 0o755)
+		testutil.WriteFile(t, filepath.Join(blobsDir, "abc123"), []byte("blob content"), 0o644)
+		testutil.WriteFile(t, filepath.Join(refsDir, "main"), []byte("abc123def456"), 0o644)
 
 		// Create dataset directory structure
 		datasetDir := filepath.Join(hubDir, "datasets--owner--dataset1")
 		datasetBlobsDir := filepath.Join(datasetDir, "blobs")
-		os.MkdirAll(datasetBlobsDir, 0o755)
-		os.WriteFile(filepath.Join(datasetBlobsDir, "def456"), []byte("dataset blob"), 0o644)
+		testutil.MkdirAll(t, datasetBlobsDir, 0o755)
+		testutil.WriteFile(t, filepath.Join(datasetBlobsDir, "def456"), []byte("dataset blob"), 0o644)
 
 		entries, err := scanCacheStructure(tmpDir, "")
 		if err != nil {
@@ -195,8 +195,8 @@ func TestScanCacheStructure(t *testing.T) {
 		hubDir := filepath.Join(tmpDir, "hub")
 
 		// Create model and dataset
-		os.MkdirAll(filepath.Join(hubDir, "models--owner--model1", "blobs"), 0o755)
-		os.MkdirAll(filepath.Join(hubDir, "datasets--owner--dataset1", "blobs"), 0o755)
+		testutil.MkdirAll(t, filepath.Join(hubDir, "models--owner--model1", "blobs"), 0o755)
+		testutil.MkdirAll(t, filepath.Join(hubDir, "datasets--owner--dataset1", "blobs"), 0o755)
 
 		entries, err := scanCacheStructure(tmpDir, "model")
 		if err != nil {
@@ -214,7 +214,7 @@ func TestScanCacheStructure(t *testing.T) {
 		tmpDir := t.TempDir()
 		hubDir := filepath.Join(tmpDir, "hub")
 
-		os.MkdirAll(filepath.Join(hubDir, "models--TheBloke--Mistral-7B-GGUF", "blobs"), 0o755)
+		testutil.MkdirAll(t, filepath.Join(hubDir, "models--TheBloke--Mistral-7B-GGUF", "blobs"), 0o755)
 
 		entries, err := scanCacheStructure(tmpDir, "")
 		if err != nil {
@@ -246,7 +246,7 @@ func TestScanManifests(t *testing.T) {
 
 		// Create models directory with manifest
 		modelDir := filepath.Join(tmpDir, "models", "owner", "repo")
-		os.MkdirAll(modelDir, 0o755)
+		testutil.MkdirAll(t, modelDir, 0o755)
 
 		manifest := hfdownloader.DownloadManifest{
 			Version:     "1",
@@ -260,7 +260,7 @@ func TestScanManifests(t *testing.T) {
 		}
 
 		data, _ := yaml.Marshal(manifest)
-		os.WriteFile(filepath.Join(modelDir, hfdownloader.ManifestFilename), data, 0o644)
+		testutil.WriteFile(t, filepath.Join(modelDir, hfdownloader.ManifestFilename), data, 0o644)
 
 		entries, err := scanManifests(tmpDir, "")
 		if err != nil {
@@ -286,23 +286,23 @@ func TestScanManifests(t *testing.T) {
 
 		// Create model manifest
 		modelDir := filepath.Join(tmpDir, "models", "owner", "model")
-		os.MkdirAll(modelDir, 0o755)
+		testutil.MkdirAll(t, modelDir, 0o755)
 		modelManifest := hfdownloader.DownloadManifest{
 			Type: "model",
 			Repo: "owner/model",
 		}
 		data, _ := yaml.Marshal(modelManifest)
-		os.WriteFile(filepath.Join(modelDir, hfdownloader.ManifestFilename), data, 0o644)
+		testutil.WriteFile(t, filepath.Join(modelDir, hfdownloader.ManifestFilename), data, 0o644)
 
 		// Create dataset manifest
 		datasetDir := filepath.Join(tmpDir, "datasets", "owner", "dataset")
-		os.MkdirAll(datasetDir, 0o755)
+		testutil.MkdirAll(t, datasetDir, 0o755)
 		datasetManifest := hfdownloader.DownloadManifest{
 			Type: "dataset",
 			Repo: "owner/dataset",
 		}
 		data, _ = yaml.Marshal(datasetManifest)
-		os.WriteFile(filepath.Join(datasetDir, hfdownloader.ManifestFilename), data, 0o644)
+		testutil.WriteFile(t, filepath.Join(datasetDir, hfdownloader.ManifestFilename), data, 0o644)
 
 		// Filter for datasets only
 		entries, err := scanManifests(tmpDir, "dataset")

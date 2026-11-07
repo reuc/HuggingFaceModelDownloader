@@ -19,6 +19,24 @@ import (
 	"time"
 )
 
+// flakyHeadOrRange handles the request preamble shared by the range servers
+// below: it answers a HEAD with full's size and Range support, and rejects a
+// request whose Range is not a closed "bytes=start-end" range within full.
+// Otherwise it returns the requested range; ok is false when the response has
+// already been written.
+func flakyHeadOrRange(w http.ResponseWriter, r *http.Request, full []byte) (start, end int64, ok bool) {
+	if r.Method == http.MethodHead {
+		w.Header().Set("Content-Length", strconv.Itoa(len(full)))
+		w.Header().Set("Accept-Ranges", "bytes")
+		return 0, 0, false
+	}
+	if _, err := fmt.Sscanf(r.Header.Get("Range"), "bytes=%d-%d", &start, &end); err != nil || end >= int64(len(full)) {
+		http.Error(w, "bad range", http.StatusBadRequest)
+		return 0, 0, false
+	}
+	return start, end, true
+}
+
 // flakyRangeServer serves HTTP Range requests for a fixed byte slice but aborts
 // the connection mid-stream on the FIRST request it sees for each distinct
 // "end" byte (i.e. once per part). Subsequent retries for the same part — which
@@ -34,20 +52,13 @@ func flakyRangeServer(t *testing.T, full []byte) (*httptest.Server, *[]string) {
 		rangeHdrs []string
 	)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodHead {
-			w.Header().Set("Content-Length", strconv.Itoa(len(full)))
-			w.Header().Set("Accept-Ranges", "bytes")
-			return
-		}
-		rng := r.Header.Get("Range")
-		var start, end int64
-		if _, err := fmt.Sscanf(rng, "bytes=%d-%d", &start, &end); err != nil || end >= int64(len(full)) {
-			http.Error(w, "bad range", http.StatusBadRequest)
+		start, end, ok := flakyHeadOrRange(w, r, full)
+		if !ok {
 			return
 		}
 
 		mu.Lock()
-		rangeHdrs = append(rangeHdrs, rng)
+		rangeHdrs = append(rangeHdrs, r.Header.Get("Range"))
 		cut := !cutEnds[end]
 		if cut {
 			cutEnds[end] = true
@@ -63,13 +74,13 @@ func flakyRangeServer(t *testing.T, full []byte) (*httptest.Server, *[]string) {
 			// Write half the bytes then abort. The client sees a short body
 			// and falls into its retry path.
 			half := len(content) / 2
-			w.Write(content[:half])
+			_, _ = w.Write(content[:half])
 			if f, ok := w.(http.Flusher); ok {
 				f.Flush()
 			}
 			panic(http.ErrAbortHandler)
 		}
-		w.Write(content)
+		_, _ = w.Write(content)
 	}))
 	return srv, &rangeHdrs
 }
@@ -168,15 +179,8 @@ func TestDownloadMultipart_ResumesAfterFlakyConnection(t *testing.T) {
 func slowRangeServer(t *testing.T, full []byte) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodHead {
-			w.Header().Set("Content-Length", strconv.Itoa(len(full)))
-			w.Header().Set("Accept-Ranges", "bytes")
-			return
-		}
-		rng := r.Header.Get("Range")
-		var start, end int64
-		if _, err := fmt.Sscanf(rng, "bytes=%d-%d", &start, &end); err != nil || end >= int64(len(full)) {
-			http.Error(w, "bad range", http.StatusBadRequest)
+		start, end, ok := flakyHeadOrRange(w, r, full)
+		if !ok {
 			return
 		}
 		content := full[start : end+1]
@@ -453,7 +457,7 @@ func headFlakyServer(t *testing.T, full []byte, failHeads int32, status int) (*h
 		}
 		w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, len(full)))
 		w.WriteHeader(http.StatusPartialContent)
-		w.Write(full[start : end+1])
+		_, _ = w.Write(full[start : end+1])
 	}))
 	return srv, &heads
 }

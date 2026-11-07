@@ -221,25 +221,9 @@ Examples:
   hfdownloader mirror diff office --repo TheBloke/Mistral`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			targetRef := args[0]
-
-			// Load targets config
-			targetsCfg, err := hfdownloader.LoadTargets("")
+			targetPath, err := resolveMirrorTarget(args[0], &cacheDir)
 			if err != nil {
 				return err
-			}
-			targetPath := targetsCfg.ResolvePath(targetRef)
-
-			// Local cache: CLI flag > config file > HF_HOME > default
-			if cacheDir == "" {
-				if cfg := loadConfigMap(); cfg != nil {
-					if v, ok := cfg["cache-dir"].(string); ok && v != "" {
-						cacheDir = v
-					}
-				}
-			}
-			if cacheDir == "" {
-				cacheDir = hfdownloader.DefaultCacheDir()
 			}
 
 			// Scan both caches
@@ -402,24 +386,9 @@ Examples:
   hfdownloader mirror push office --force          # Re-copy incomplete repos`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			targetRef := args[0]
-
-			targetsCfg, err := hfdownloader.LoadTargets("")
+			targetPath, err := resolveMirrorTarget(args[0], &cacheDir)
 			if err != nil {
 				return err
-			}
-			targetPath := targetsCfg.ResolvePath(targetRef)
-
-			// CLI flag > config file > HF_HOME > default
-			if cacheDir == "" {
-				if cfg := loadConfigMap(); cfg != nil {
-					if v, ok := cfg["cache-dir"].(string); ok && v != "" {
-						cacheDir = v
-					}
-				}
-			}
-			if cacheDir == "" {
-				cacheDir = hfdownloader.DefaultCacheDir()
 			}
 
 			return mirrorSync(cacheDir, targetPath, repoFilter, dryRun, verify, deleteExtra, force, ro.Quiet)
@@ -462,24 +431,9 @@ Examples:
   hfdownloader mirror pull office --force          # Re-copy incomplete repos`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			targetRef := args[0]
-
-			targetsCfg, err := hfdownloader.LoadTargets("")
+			targetPath, err := resolveMirrorTarget(args[0], &cacheDir)
 			if err != nil {
 				return err
-			}
-			targetPath := targetsCfg.ResolvePath(targetRef)
-
-			// CLI flag > config file > HF_HOME > default
-			if cacheDir == "" {
-				if cfg := loadConfigMap(); cfg != nil {
-					if v, ok := cfg["cache-dir"].(string); ok && v != "" {
-						cacheDir = v
-					}
-				}
-			}
-			if cacheDir == "" {
-				cacheDir = hfdownloader.DefaultCacheDir()
 			}
 
 			// Pull is just push in reverse
@@ -495,6 +449,29 @@ Examples:
 	cmd.Flags().BoolVar(&force, "force", false, "Re-copy incomplete or outdated repos")
 
 	return cmd
+}
+
+// resolveMirrorTarget returns the cache path of targetRef (a configured target
+// name or a path). Once the targets config has loaded, it also fills in
+// *cacheDir, the local cache, if empty: CLI flag > config file > HF_HOME > default.
+func resolveMirrorTarget(targetRef string, cacheDir *string) (string, error) {
+	targetsCfg, err := hfdownloader.LoadTargets("")
+	if err != nil {
+		return "", err
+	}
+	targetPath := targetsCfg.ResolvePath(targetRef)
+
+	if *cacheDir == "" {
+		if cfg := loadConfigMap(); cfg != nil {
+			if v, ok := cfg["cache-dir"].(string); ok && v != "" {
+				*cacheDir = v
+			}
+		}
+	}
+	if *cacheDir == "" {
+		*cacheDir = hfdownloader.DefaultCacheDir()
+	}
+	return targetPath, nil
 }
 
 // syncEntry represents a repo to be synced with its reason.
@@ -617,9 +594,15 @@ func mirrorSync(srcCache, dstCache, repoFilter string, dryRun, verify, deleteExt
 
 		// For incomplete/outdated repos, remove destination first
 		if e.Reason == "incomplete" || e.Reason == "outdated" {
-			relPath, _ := filepath.Rel(srcCache, e.Path)
+			relPath, err := filepath.Rel(srcCache, e.Path)
+			if err != nil {
+				// An empty relPath would remove the whole destination cache.
+				return fmt.Errorf("copy %s: %w", e.Repo, err)
+			}
 			dstPath := filepath.Join(dstCache, relPath)
-			os.RemoveAll(dstPath)
+			if err := os.RemoveAll(dstPath); err != nil {
+				return fmt.Errorf("remove old copy of %s: %w", e.Repo, err)
+			}
 		}
 
 		if err := hfdownloader.CopyRepoCache(e.Path, srcCache, dstCache); err != nil {
@@ -711,9 +694,9 @@ func checkRepoIntegrity(repoPath string) RepoIntegrity {
 		// Check if snapshot symlinks point to existing blobs
 		for _, entry := range entries {
 			snapshotPath := filepath.Join(snapshotsDir, entry.Name())
-			filepath.Walk(snapshotPath, func(path string, info os.FileInfo, err error) error {
+			err := filepath.Walk(snapshotPath, func(path string, info os.FileInfo, err error) error {
 				if err != nil {
-					return nil
+					return err
 				}
 				if info.Mode()&os.ModeSymlink != 0 {
 					target, err := os.Readlink(path)
@@ -732,6 +715,11 @@ func checkRepoIntegrity(repoPath string) RepoIntegrity {
 				}
 				return nil
 			})
+			if err != nil {
+				// Unreadable snapshot: it can't be verified, so don't report it complete.
+				result.Errors = append(result.Errors, fmt.Sprintf("scan snapshot %s: %v", entry.Name(), err))
+				result.Complete = false
+			}
 		}
 	} else {
 		result.Complete = false

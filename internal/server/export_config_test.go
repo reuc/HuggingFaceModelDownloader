@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/reuc/HuggingFaceModelDownloader/internal/testutil"
 )
 
 // Saving settings from the web UI used to rewrite the whole config file,
@@ -19,8 +21,8 @@ import (
 func TestUpdateSettings_KeepsOtherConfigKeys(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	path := ConfigPath()
-	os.MkdirAll(filepath.Dir(path), 0o755)
-	os.WriteFile(path, []byte(`{"cache-dir": "/data/hf", "backoff-initial": "1s", "link-mode": "hardlink", "connections": 4}`), 0o644)
+	testutil.MkdirAll(t, filepath.Dir(path), 0o755)
+	testutil.WriteFile(t, path, []byte(`{"cache-dir": "/data/hf", "backoff-initial": "1s", "link-mode": "hardlink", "connections": 4}`), 0o644)
 
 	srv := newTestServer()
 	req := httptest.NewRequest("POST", "/api/settings", bytes.NewBufferString(`{"connections": 12}`))
@@ -61,12 +63,12 @@ func TestCacheExport_WritesUnderExportDir(t *testing.T) {
 	exportDir := t.TempDir()
 	// Minimal cache: blob + snapshot symlink + ref.
 	repo := filepath.Join(cacheDir, "hub", "models--o--r")
-	os.MkdirAll(filepath.Join(repo, "blobs"), 0o755)
-	os.MkdirAll(filepath.Join(repo, "snapshots", "c0ffee"), 0o755)
-	os.MkdirAll(filepath.Join(repo, "refs"), 0o755)
-	os.WriteFile(filepath.Join(repo, "blobs", "abc"), []byte("weights"), 0o644)
-	os.Symlink("../../blobs/abc", filepath.Join(repo, "snapshots", "c0ffee", "model.gguf"))
-	os.WriteFile(filepath.Join(repo, "refs", "main"), []byte("c0ffee"), 0o644)
+	testutil.MkdirAll(t, filepath.Join(repo, "blobs"), 0o755)
+	testutil.MkdirAll(t, filepath.Join(repo, "snapshots", "c0ffee"), 0o755)
+	testutil.MkdirAll(t, filepath.Join(repo, "refs"), 0o755)
+	testutil.WriteFile(t, filepath.Join(repo, "blobs", "abc"), []byte("weights"), 0o644)
+	testutil.Symlink(t, "../../blobs/abc", filepath.Join(repo, "snapshots", "c0ffee", "model.gguf"))
+	testutil.WriteFile(t, filepath.Join(repo, "refs", "main"), []byte("c0ffee"), 0o644)
 
 	cfg := DefaultConfig()
 	cfg.CacheDir = cacheDir

@@ -174,7 +174,7 @@ func analyzeVision(files []FileInfo, metadata map[string]interface{}) *VisionInf
 
 	// Detect task from file patterns if not set
 	if info.Task == "" {
-		info.Task = detectVisionTask(files, metadata)
+		info.Task = detectVisionTask(metadata)
 	}
 
 	// Set task description
@@ -234,7 +234,7 @@ func analyzeMultimodal(files []FileInfo, metadata map[string]interface{}) *Multi
 	}
 
 	// Detect task
-	info.Task = detectMultimodalTask(files, metadata)
+	info.Task = detectMultimodalTask(metadata)
 	if desc, ok := multimodalTaskDescriptions[info.Task]; ok {
 		info.TaskDescription = desc
 	}
@@ -329,8 +329,8 @@ func detectAudioTask(files []FileInfo, metadata map[string]interface{}) string {
 	return "audio-classification" // Default
 }
 
-// detectVisionTask detects the vision task from files and metadata.
-func detectVisionTask(files []FileInfo, metadata map[string]interface{}) string {
+// detectVisionTask detects the vision task from metadata.
+func detectVisionTask(metadata map[string]interface{}) string {
 	// Check config.json for model type hints
 	if config, ok := metadata["config.json"].(map[string]interface{}); ok {
 		if modelType, ok := config["model_type"].(string); ok {
@@ -364,8 +364,8 @@ func detectVisionTask(files []FileInfo, metadata map[string]interface{}) string 
 	return "image-classification" // Default
 }
 
-// detectMultimodalTask detects the multimodal task from files and metadata.
-func detectMultimodalTask(files []FileInfo, metadata map[string]interface{}) string {
+// detectMultimodalTask detects the multimodal task from metadata.
+func detectMultimodalTask(metadata map[string]interface{}) string {
 	// Check config.json for model type hints
 	if config, ok := metadata["config.json"].(map[string]interface{}); ok {
 		if modelType, ok := config["model_type"].(string); ok {
@@ -412,7 +412,7 @@ func detectFramework(files []FileInfo) string {
 }
 
 // isAudioModel checks if the repository is an audio model.
-func isAudioModel(files []FileInfo, metadata map[string]interface{}) bool {
+func isAudioModel(metadata map[string]interface{}) bool {
 	// Check preprocessor_config.json for audio features
 	if preprocessor, ok := metadata["preprocessor_config.json"].(map[string]interface{}); ok {
 		if _, ok := preprocessor["sampling_rate"]; ok {
@@ -447,7 +447,7 @@ func isAudioModel(files []FileInfo, metadata map[string]interface{}) bool {
 }
 
 // isVisionModel checks if the repository is a vision model.
-func isVisionModel(files []FileInfo, metadata map[string]interface{}) bool {
+func isVisionModel(metadata map[string]interface{}) bool {
 	// Check preprocessor_config.json for image features
 	if preprocessor, ok := metadata["preprocessor_config.json"].(map[string]interface{}); ok {
 		if _, ok := preprocessor["image_mean"]; ok {
@@ -478,7 +478,7 @@ func isVisionModel(files []FileInfo, metadata map[string]interface{}) bool {
 }
 
 // isMultimodalModel checks if the repository is a multimodal model.
-func isMultimodalModel(files []FileInfo, metadata map[string]interface{}) bool {
+func isMultimodalModel(metadata map[string]interface{}) bool {
 	// Check config.json for multimodal indicators
 	if config, ok := metadata["config.json"].(map[string]interface{}); ok {
 		// Multiple modality configs present
@@ -519,15 +519,15 @@ func isMultimodalModel(files []FileInfo, metadata map[string]interface{}) bool {
 
 // detectSpecializedType determines if a model is audio, vision, or multimodal.
 // Returns the detected type or empty string if not a specialized model.
-func detectSpecializedType(files []FileInfo, metadata map[string]interface{}) RepoType {
+func detectSpecializedType(metadata map[string]interface{}) RepoType {
 	// Check in order of specificity
-	if isMultimodalModel(files, metadata) {
+	if isMultimodalModel(metadata) {
 		return TypeMultimodal
 	}
-	if isAudioModel(files, metadata) {
+	if isAudioModel(metadata) {
 		return TypeAudio
 	}
-	if isVisionModel(files, metadata) {
+	if isVisionModel(metadata) {
 		return TypeVision
 	}
 	// ONNX is not a specialization: a repo with PyTorch weights that also

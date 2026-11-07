@@ -81,7 +81,7 @@ func TestVerifySHA256(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	t.Run("matching hash", func(t *testing.T) {
-		content := []byte{}
+		var content []byte
 		expectedHash := "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 
 		filePath := filepath.Join(tmpDir, "match.txt")
@@ -96,7 +96,7 @@ func TestVerifySHA256(t *testing.T) {
 	})
 
 	t.Run("case insensitive", func(t *testing.T) {
-		content := []byte{}
+		var content []byte
 		// Same hash but uppercase
 		upperHash := "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855"
 
@@ -190,7 +190,7 @@ func TestShouldSkipLocal(t *testing.T) {
 	})
 
 	t.Run("LFS with SHA256 match", func(t *testing.T) {
-		content := []byte{}
+		var content []byte
 		filePath := filepath.Join(tmpDir, "lfsMatch.txt")
 		if err := os.WriteFile(filePath, content, 0644); err != nil {
 			t.Fatal(err)

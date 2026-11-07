@@ -316,8 +316,7 @@ func analyzeGGUF(files []FileInfo) *GGUFInfo {
 
 // parseGGUFQuantization extracts quantization info from a single GGUF file.
 func parseGGUFQuantization(f FileInfo) *GGUFQuantization {
-	q := parseGGUFGroup([]FileInfo{f})
-	return &q
+	return new(parseGGUFGroup([]FileInfo{f}))
 }
 
 // parseGGUFGroup builds the quantization entry for one model's files (one

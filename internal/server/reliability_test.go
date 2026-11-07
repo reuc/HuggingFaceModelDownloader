@@ -40,8 +40,10 @@ func TestWritePump_OneMessagePerFrame(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer conn.Close()
-	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	defer func() { _ = conn.Close() }()
+	if err := conn.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
 
 	for i, want := range msgs {
 		_, data, err := conn.ReadMessage()

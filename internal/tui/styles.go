@@ -13,18 +13,16 @@ var (
 	ColorSecondary = lipgloss.Color("99")  // Purple
 	ColorSuccess   = lipgloss.Color("82")  // Green
 	ColorWarning   = lipgloss.Color("214") // Orange
-	ColorError     = lipgloss.Color("196") // Red
 	ColorMuted     = lipgloss.Color("241") // Gray
 	ColorHighlight = lipgloss.Color("229") // Yellow
 
-	ColorBorder       = lipgloss.Color("238")
-	ColorBorderFocus  = lipgloss.Color("86")
-	ColorBorderActive = lipgloss.Color("82")
+	ColorBorder = lipgloss.Color("238")
 )
 
 // Selector styles
 var (
 	// Header styles
+
 	TitleStyle = lipgloss.NewStyle().
 			Bold(true).
 			Foreground(ColorPrimary).
@@ -37,6 +35,7 @@ var (
 			Foreground(ColorSecondary)
 
 	// Item styles
+
 	ItemStyle = lipgloss.NewStyle().
 			PaddingLeft(2)
 
@@ -48,15 +47,16 @@ var (
 			Foreground(ColorPrimary).
 			Bold(true)
 
-	// Checkbox styles
+	// CheckboxChecked and CheckboxUnchecked render a selected and an unselected checkbox.
 	CheckboxChecked   = lipgloss.NewStyle().Foreground(ColorSuccess).SetString("[x]")
 	CheckboxUnchecked = lipgloss.NewStyle().Foreground(ColorMuted).SetString("[ ]")
 
-	// Quality stars
+	// StarFilled and StarEmpty render the filled and empty quality stars.
 	StarFilled = lipgloss.NewStyle().Foreground(ColorWarning).SetString("★")
 	StarEmpty  = lipgloss.NewStyle().Foreground(ColorMuted).SetString("☆")
 
 	// Labels
+
 	RecommendedBadge = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("0")).
 				Background(ColorSuccess).
@@ -76,26 +76,20 @@ var (
 				Foreground(ColorMuted).
 				Italic(true)
 
-	// Category header
+	// CategoryStyle styles a category header.
 	CategoryStyle = lipgloss.NewStyle().
 			Bold(true).
 			Foreground(ColorSecondary).
 			MarginTop(1).
 			MarginBottom(0)
 
-	// Footer styles
+	// FooterStyle styles the key-hint footer.
 	FooterStyle = lipgloss.NewStyle().
 			Foreground(ColorMuted).
 			MarginTop(1)
 
-	FooterKeyStyle = lipgloss.NewStyle().
-			Foreground(ColorPrimary).
-			Bold(true)
-
-	FooterDescStyle = lipgloss.NewStyle().
-			Foreground(ColorMuted)
-
 	// Command box
+
 	CommandBoxStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(ColorBorder).
@@ -110,9 +104,6 @@ var (
 				Foreground(ColorHighlight)
 
 	// Summary styles
-	SummaryStyle = lipgloss.NewStyle().
-			MarginTop(1).
-			Padding(0, 1)
 
 	SummaryLabelStyle = lipgloss.NewStyle().
 				Foreground(ColorMuted)
@@ -121,31 +112,15 @@ var (
 				Foreground(ColorPrimary).
 				Bold(true)
 
-	// Border box for main content
-	BoxStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(ColorBorder).
-			Padding(1, 2)
-
-	// Status bar
-	StatusBarStyle = lipgloss.NewStyle().
-			Foreground(ColorMuted).
-			Background(lipgloss.Color("236")).
-			Padding(0, 1)
-
 	// Help keys
+
 	HelpStyle = lipgloss.NewStyle().
 			Foreground(ColorMuted)
 
 	HelpKeyStyle = lipgloss.NewStyle().
 			Foreground(ColorPrimary)
 
-	// Error style
-	ErrorStyle = lipgloss.NewStyle().
-			Foreground(ColorError).
-			Bold(true)
-
-	// Success style
+	// SuccessStyle styles a success marker.
 	SuccessStyle = lipgloss.NewStyle().
 			Foreground(ColorSuccess).
 			Bold(true)

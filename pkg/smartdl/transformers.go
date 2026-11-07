@@ -182,8 +182,16 @@ func analyzeWeightFiles(files []FileInfo) []WeightFile {
 	shardPattern := regexp.MustCompile(`[-_](\d+)[-_]of[-_](\d+)`)
 
 	for _, f := range files {
-		ext := strings.ToLower(filepath.Ext(f.Name))
-		if ext != ".safetensors" && ext != ".bin" && ext != ".pt" && ext != ".pth" {
+		// Determine format; anything else is not a weight file.
+		var format string
+		switch strings.ToLower(filepath.Ext(f.Name)) {
+		case ".safetensors":
+			format = "safetensors"
+		case ".bin":
+			format = "pytorch_bin"
+		case ".pt", ".pth":
+			format = "pytorch"
+		default:
 			continue
 		}
 
@@ -198,16 +206,7 @@ func analyzeWeightFiles(files []FileInfo) []WeightFile {
 			Name:      f.Name,
 			Size:      f.Size,
 			SizeHuman: f.SizeHuman,
-		}
-
-		// Determine format
-		switch ext {
-		case ".safetensors":
-			wf.Format = "safetensors"
-		case ".bin":
-			wf.Format = "pytorch_bin"
-		case ".pt", ".pth":
-			wf.Format = "pytorch"
+			Format:    format,
 		}
 
 		// Check for sharding pattern
@@ -480,6 +479,42 @@ func pytorchBinSelection(files []FileInfo) (string, int64) {
 	return filter, size
 }
 
+// safetensorsVsBinItems returns the SafeTensors and PyTorch (.bin) format
+// choices for a repo that ships both. pytorchBinSize is the .bin size to show
+// when files has no LFS .bin weights to measure.
+func safetensorsVsBinItems(files []FileInfo, safetensorsSize, pytorchBinSize int64) []SelectableItem {
+	binFilter, binSize := pytorchBinSelection(files)
+	if binSize == 0 {
+		binSize = pytorchBinSize
+	}
+	return []SelectableItem{
+		{
+			ID:           "safetensors",
+			Label:        "SafeTensors",
+			Description:  "Faster loading, recommended",
+			Size:         safetensorsSize,
+			SizeHuman:    humanSize(safetensorsSize),
+			Quality:      5,
+			QualityStars: "★★★★★",
+			Recommended:  true,
+			Category:     "format",
+			FilterValue:  "safetensors",
+		},
+		{
+			ID:           "pytorch",
+			Label:        "PyTorch (.bin)",
+			Description:  "Legacy format",
+			Size:         binSize,
+			SizeHuman:    humanSize(binSize),
+			Quality:      3,
+			QualityStars: "★★★☆☆",
+			Recommended:  false,
+			Category:     "format",
+			FilterValue:  binFilter,
+		},
+	}
+}
+
 // TransformersToSelectableItems converts Transformers weight files to SelectableItems.
 func TransformersToSelectableItems(info *TransformersInfo, files []FileInfo) []SelectableItem {
 	if info == nil {
@@ -509,35 +544,7 @@ func TransformersToSelectableItems(info *TransformersInfo, files []FileInfo) []S
 	if formatItems := WeightFormatItems(files); len(formatItems) > 0 {
 		items = append(items, formatItems...)
 	} else if hasSafetensors && hasPytorchBin {
-		items = append(items, SelectableItem{
-			ID:           "safetensors",
-			Label:        "SafeTensors",
-			Description:  "Faster loading, recommended",
-			Size:         safetensorsSize,
-			SizeHuman:    humanSize(safetensorsSize),
-			Quality:      5,
-			QualityStars: "★★★★★",
-			Recommended:  true,
-			Category:     "format",
-			FilterValue:  "safetensors",
-		})
-
-		binFilter, binSize := pytorchBinSelection(files)
-		if binSize == 0 {
-			binSize = pytorchBinSize
-		}
-		items = append(items, SelectableItem{
-			ID:           "pytorch",
-			Label:        "PyTorch (.bin)",
-			Description:  "Legacy format",
-			Size:         binSize,
-			SizeHuman:    humanSize(binSize),
-			Quality:      3,
-			QualityStars: "★★★☆☆",
-			Recommended:  false,
-			Category:     "format",
-			FilterValue:  binFilter,
-		})
+		items = append(items, safetensorsVsBinItems(files, safetensorsSize, pytorchBinSize)...)
 	}
 
 	// Detect precision variants by checking file paths

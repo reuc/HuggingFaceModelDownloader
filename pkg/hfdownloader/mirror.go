@@ -4,6 +4,7 @@
 package hfdownloader
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -58,13 +59,17 @@ func CopyRepoCache(repoPath, srcCache, dstCache string) error {
 			if err != nil {
 				return err
 			}
-			os.Remove(dst)
+			// Replace whatever is already there; Symlink needs the slot free.
+			if err := os.Remove(dst); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return err
+			}
 			return os.Symlink(link, dst)
 		}
 
 		for _, c := range bySize[info.Size()] {
 			if os.SameFile(c.info, info) {
-				os.Remove(dst)
+				// If dst can't be removed, Link fails too and we copy over it.
+				_ = os.Remove(dst)
 				if err := os.MkdirAll(filepath.Dir(dst), 0o755); err == nil && os.Link(c.dst, dst) == nil {
 					return nil
 				}

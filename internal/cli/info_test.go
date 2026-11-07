@@ -4,13 +4,13 @@
 package cli
 
 import (
-	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/reuc/HuggingFaceModelDownloader/internal/testutil"
 	"github.com/reuc/HuggingFaceModelDownloader/pkg/hfdownloader"
 )
 
@@ -104,7 +104,7 @@ func TestFindRepoInfo(t *testing.T) {
 
 		// Create manifest
 		modelDir := filepath.Join(tmpDir, "models", "owner", "repo")
-		os.MkdirAll(modelDir, 0o755)
+		testutil.MkdirAll(t, modelDir, 0o755)
 
 		now := time.Now()
 		manifest := hfdownloader.DownloadManifest{
@@ -125,7 +125,7 @@ func TestFindRepoInfo(t *testing.T) {
 		}
 
 		data, _ := yaml.Marshal(manifest)
-		os.WriteFile(filepath.Join(modelDir, hfdownloader.ManifestFilename), data, 0o644)
+		testutil.WriteFile(t, filepath.Join(modelDir, hfdownloader.ManifestFilename), data, 0o644)
 
 		info, err := findRepoInfo(tmpDir, "owner/repo")
 		if err != nil {
@@ -150,7 +150,7 @@ func TestFindRepoInfo(t *testing.T) {
 		tmpDir := t.TempDir()
 
 		modelDir := filepath.Join(tmpDir, "models", "TheBloke", "Mistral-7B-GGUF")
-		os.MkdirAll(modelDir, 0o755)
+		testutil.MkdirAll(t, modelDir, 0o755)
 
 		manifest := hfdownloader.DownloadManifest{
 			Type: "model",
@@ -158,7 +158,7 @@ func TestFindRepoInfo(t *testing.T) {
 		}
 
 		data, _ := yaml.Marshal(manifest)
-		os.WriteFile(filepath.Join(modelDir, hfdownloader.ManifestFilename), data, 0o644)
+		testutil.WriteFile(t, filepath.Join(modelDir, hfdownloader.ManifestFilename), data, 0o644)
 
 		info, err := findRepoInfo(tmpDir, "Mistral-7B-GGUF")
 		if err != nil {
@@ -176,7 +176,7 @@ func TestFindRepoInfo(t *testing.T) {
 		// Create two similar repos
 		for _, name := range []string{"Mistral-7B-GGUF", "Mistral-7B-Instruct-GGUF"} {
 			modelDir := filepath.Join(tmpDir, "models", "TheBloke", name)
-			os.MkdirAll(modelDir, 0o755)
+			testutil.MkdirAll(t, modelDir, 0o755)
 
 			manifest := hfdownloader.DownloadManifest{
 				Type: "model",
@@ -184,7 +184,7 @@ func TestFindRepoInfo(t *testing.T) {
 			}
 
 			data, _ := yaml.Marshal(manifest)
-			os.WriteFile(filepath.Join(modelDir, hfdownloader.ManifestFilename), data, 0o644)
+			testutil.WriteFile(t, filepath.Join(modelDir, hfdownloader.ManifestFilename), data, 0o644)
 		}
 
 		_, err := findRepoInfo(tmpDir, "Mistral")

@@ -15,6 +15,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/reuc/HuggingFaceModelDownloader/internal/testutil"
 )
 
 // The commit returned by the Hub's revision API and the sha256/oid in the
@@ -62,12 +64,12 @@ func evilHub(commit, sha string) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case strings.HasPrefix(r.URL.Path, "/api/models/o/r/revision/"):
-			json.NewEncoder(w).Encode(map[string]string{"sha": commit})
+			_ = json.NewEncoder(w).Encode(map[string]string{"sha": commit})
 		case strings.HasPrefix(r.URL.Path, "/api/models/o/r/tree/"):
-			json.NewEncoder(w).Encode([]hfNode{{Type: "file", Path: "model.bin", Size: 4,
+			_ = json.NewEncoder(w).Encode([]hfNode{{Type: "file", Path: "model.bin", Size: 4,
 				LFS: &hfLfsInfo{Oid: sha, Size: 4}}})
 		default:
-			w.Write([]byte("data"))
+			_, _ = w.Write([]byte("data"))
 		}
 	}))
 }
@@ -142,9 +144,9 @@ func TestDownload_MaskedHashWithoutAccess(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case strings.HasPrefix(r.URL.Path, "/api/models/o/r/revision/"):
-			json.NewEncoder(w).Encode(map[string]string{"sha": "0123456789abcdef0123456789abcdef01234567"})
+			_ = json.NewEncoder(w).Encode(map[string]string{"sha": "0123456789abcdef0123456789abcdef01234567"})
 		case strings.HasPrefix(r.URL.Path, "/api/models/o/r/tree/"):
-			json.NewEncoder(w).Encode([]hfNode{{Type: "file", Path: "model.bin", Size: 4,
+			_ = json.NewEncoder(w).Encode([]hfNode{{Type: "file", Path: "model.bin", Size: 4,
 				LFS: &hfLfsInfo{Oid: strings.Repeat("*", 64), Size: 4}}})
 		default:
 			http.Error(w, "gated", http.StatusUnauthorized)
@@ -198,7 +200,7 @@ func TestCacheLayer_RejectsUnsafeNames(t *testing.T) {
 		t.Error("CreateFriendlySymlink accepted a traversal filter subdir")
 	}
 	tmp := filepath.Join(t.TempDir(), "blob")
-	os.WriteFile(tmp, []byte("x"), 0o644)
+	testutil.WriteFile(t, tmp, []byte("x"), 0o644)
 	if _, err := rd.StoreDownloadedFile(tmp, "f", "main", "/../../x", "", true); err == nil {
 		t.Error("StoreDownloadedFile accepted a traversal hash")
 	}

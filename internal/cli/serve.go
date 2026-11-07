@@ -86,7 +86,7 @@ web app on a different origin needs to call the API.`,
 
 			// Apply config file settings first (for values not set by CLI)
 			if err := server.ApplyConfigToServer(&cfg); err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: could not load config file: %v\n", err)
+				_, _ = fmt.Fprintf(os.Stderr, "Warning: could not load config file: %v\n", err)
 			}
 			if _, err := hfdownloader.ParseLinkMode(cfg.LinkMode); err != nil {
 				return err

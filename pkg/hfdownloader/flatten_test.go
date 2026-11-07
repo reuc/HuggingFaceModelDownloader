@@ -17,6 +17,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/reuc/HuggingFaceModelDownloader/internal/testutil"
 )
 
 // With Flatten, a finished download is only real files in models/<owner>/<name>
@@ -221,7 +223,9 @@ func TestFlatten_OtherRevisions(t *testing.T) {
 	defer srv.Close()
 	root := t.TempDir()
 	cfg := Settings{Endpoint: srv.URL, CacheDir: root, Retries: 1}
-	Download(context.Background(), Job{Repo: "o/r"}, cfg, nil)
+	if err := Download(context.Background(), Job{Repo: "o/r"}, cfg, nil); err != nil {
+		t.Fatal(err)
+	}
 	hub.commit = "2222222222222222222222222222222222222222"
 	hub.small = map[string][]byte{"config.json": []byte(`{"v": 2}`), "new.txt": []byte("new")}
 	if err := Download(context.Background(), Job{Repo: "o/r"}, cfg, nil); err != nil {
@@ -261,12 +265,14 @@ func TestFlatten_PythonCache(t *testing.T) {
 	commit := "3333333333333333333333333333333333333333"
 	small := []byte(`{"a": 1}`)
 	smallBlob := gitBlobOID(small) // 40 hex: not a SHA-256
-	os.MkdirAll(rd.BlobsDir(), 0o755)
-	os.MkdirAll(filepath.Join(rd.SnapshotDir(commit), "sub"), 0o755)
-	os.WriteFile(filepath.Join(rd.BlobsDir(), smallBlob), small, 0o644)
-	os.Symlink(filepath.Join("..", "..", "blobs", smallBlob), filepath.Join(rd.SnapshotDir(commit), "config.json"))
-	os.Symlink(filepath.Join("..", "..", "..", "blobs", smallBlob), filepath.Join(rd.SnapshotDir(commit), "sub", "same.json"))
-	rd.WriteRef("main", commit)
+	testutil.MkdirAll(t, rd.BlobsDir(), 0o755)
+	testutil.MkdirAll(t, filepath.Join(rd.SnapshotDir(commit), "sub"), 0o755)
+	testutil.WriteFile(t, filepath.Join(rd.BlobsDir(), smallBlob), small, 0o644)
+	testutil.Symlink(t, filepath.Join("..", "..", "blobs", smallBlob), filepath.Join(rd.SnapshotDir(commit), "config.json"))
+	testutil.Symlink(t, filepath.Join("..", "..", "..", "blobs", smallBlob), filepath.Join(rd.SnapshotDir(commit), "sub", "same.json"))
+	if err := rd.WriteRef("main", commit); err != nil {
+		t.Fatal(err)
+	}
 
 	res, err := rd.Flatten(FlattenOptions{})
 	if err != nil {
@@ -298,15 +304,17 @@ func TestFlatten_PartialDownload(t *testing.T) {
 	rd, _ := NewHFCache(root, 0).Repo("o/r", RepoTypeModel)
 	commit := "4444444444444444444444444444444444444444"
 	sha := strings.Repeat("a", 64)
-	os.MkdirAll(rd.BlobsDir(), 0o755)
-	os.MkdirAll(rd.SnapshotDir(commit), 0o755)
-	os.WriteFile(rd.BlobPath(sha), []byte("x"), 0o644)
-	os.Symlink(filepath.Join("..", "..", "blobs", sha), filepath.Join(rd.SnapshotDir(commit), "a.txt"))
-	rd.WriteRef("main", commit)
+	testutil.MkdirAll(t, rd.BlobsDir(), 0o755)
+	testutil.MkdirAll(t, rd.SnapshotDir(commit), 0o755)
+	testutil.WriteFile(t, rd.BlobPath(sha), []byte("x"), 0o644)
+	testutil.Symlink(t, filepath.Join("..", "..", "blobs", sha), filepath.Join(rd.SnapshotDir(commit), "a.txt"))
+	if err := rd.WriteRef("main", commit); err != nil {
+		t.Fatal(err)
+	}
 	partial := filepath.Join(rd.BlobsDir(), "tmp-"+strings.Repeat("b", 64)+".part")
-	os.WriteFile(partial, []byte("half"), 0o644)
+	testutil.WriteFile(t, partial, []byte("half"), 0o644)
 	old := time.Now().Add(-time.Hour)
-	os.Chtimes(partial, old, old) // idle, like a paused job
+	testutil.Chtimes(t, partial, old, old) // idle, like a paused job
 
 	var other *OtherRevisionsError
 	if _, err := rd.Flatten(FlattenOptions{}); !errors.As(err, &other) || other.Partial != 1 {
@@ -328,16 +336,18 @@ func makeSnapshot(t *testing.T, rd *RepoDir, commit string, files map[string]str
 	for name, data := range files {
 		i++
 		sha := fmt.Sprintf("%064x", i)
-		os.MkdirAll(rd.BlobsDir(), 0o755)
-		os.WriteFile(rd.BlobPath(sha), []byte(data), 0o644)
+		testutil.MkdirAll(t, rd.BlobsDir(), 0o755)
+		testutil.WriteFile(t, rd.BlobPath(sha), []byte(data), 0o644)
 		link := filepath.Join(rd.SnapshotDir(commit), filepath.FromSlash(name))
-		os.MkdirAll(filepath.Dir(link), 0o755)
+		testutil.MkdirAll(t, filepath.Dir(link), 0o755)
 		target, _ := filepath.Rel(filepath.Dir(link), rd.BlobPath(sha))
 		if err := os.Symlink(target, link); err != nil {
 			t.Fatal(err)
 		}
 	}
-	rd.WriteRef("main", commit)
+	if err := rd.WriteRef("main", commit); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // Copilot review: a blob another process is still downloading has no data
@@ -357,10 +367,10 @@ func TestDownload_FlattenRefusesBlobDownloadingElsewhere(t *testing.T) {
 	rd, _ := NewHFCache(root, 0).Repo("o/r", RepoTypeModel)
 	sum := sha256.Sum256(weights)
 	sha := hex.EncodeToString(sum[:])
-	os.MkdirAll(rd.BlobsDir(), 0o755)
-	os.WriteFile(rd.IncompletePath(sha), []byte("partial"), 0o644)
+	testutil.MkdirAll(t, rd.BlobsDir(), 0o755)
+	testutil.WriteFile(t, rd.IncompletePath(sha), []byte("partial"), 0o644)
 	meta, _ := json.Marshal(IncompleteMeta{PID: os.Getpid(), StartedAt: time.Now(), SHA256: sha})
-	os.WriteFile(rd.IncompleteMetaPath(sha), meta, 0o644)
+	testutil.WriteFile(t, rd.IncompleteMetaPath(sha), meta, 0o644)
 
 	cfg := Settings{Endpoint: srv.URL, CacheDir: root, Retries: 1, Flatten: true}
 	err := Download(context.Background(), Job{Repo: "o/r"}, cfg, nil)
@@ -380,9 +390,9 @@ func TestFlatten_FailureLeavesCacheIntact(t *testing.T) {
 	commit := strings.Repeat("5", 40)
 	makeSnapshot(t, rd, commit, map[string]string{"a.txt": "A", "sub/b.txt": "B"})
 	// A file where the folder sub/ must go: a.txt stages fine, sub/b.txt fails.
-	os.MkdirAll(rd.FriendlyPath(), 0o755)
+	testutil.MkdirAll(t, rd.FriendlyPath(), 0o755)
 	obstacle := filepath.Join(rd.FriendlyPath(), "sub")
-	os.WriteFile(obstacle, []byte("x"), 0o644)
+	testutil.WriteFile(t, obstacle, []byte("x"), 0o644)
 
 	if _, err := rd.Flatten(FlattenOptions{}); err == nil {
 		t.Fatal("Flatten: want an error")
@@ -400,7 +410,9 @@ func TestFlatten_FailureLeavesCacheIntact(t *testing.T) {
 		t.Errorf("staged files left behind: %v", left)
 	}
 
-	os.Remove(obstacle)
+	if err := os.Remove(obstacle); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := rd.Flatten(FlattenOptions{}); err != nil {
 		t.Fatalf("retry: %v", err)
 	}
@@ -478,7 +490,7 @@ func TestDownload_FlattenRestoresEditedFile(t *testing.T) {
 
 	// Touched, same content: hashed once, not downloaded.
 	later := time.Now().Add(time.Minute)
-	os.Chtimes(p, later, later)
+	testutil.Chtimes(t, p, later, later)
 	download()
 	if hub.gets("/model.safetensors") != gets {
 		t.Fatal("touched but unchanged file was downloaded again")
@@ -487,7 +499,7 @@ func TestDownload_FlattenRestoresEditedFile(t *testing.T) {
 	// Edited in place, same size: downloaded again and restored.
 	edited := append([]byte(nil), weights...)
 	edited[0] ^= 0xff
-	os.WriteFile(p, edited, 0o644)
+	testutil.WriteFile(t, p, edited, 0o644)
 	download()
 	if hub.gets("/model.safetensors") == gets {
 		t.Fatal("edited file was not downloaded again")

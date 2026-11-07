@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/reuc/HuggingFaceModelDownloader/internal/testutil"
 )
 
 // TestCacheRoutes_RejectTraversal: GET /api/cache/{repo...} used to accept
@@ -21,10 +23,10 @@ func TestCacheRoutes_RejectTraversal(t *testing.T) {
 	// A directory outside the cache that looks like a repo, as the exploit
 	// needed: <root>/victim/{refs/main,snapshots/<rev>/secret.txt}.
 	victim := filepath.Join(root, "victim")
-	os.MkdirAll(filepath.Join(victim, "refs"), 0o755)
-	os.MkdirAll(filepath.Join(victim, "snapshots", "rev"), 0o755)
-	os.WriteFile(filepath.Join(victim, "refs", "main"), []byte("SECRETREF"), 0o644)
-	os.WriteFile(filepath.Join(victim, "snapshots", "rev", "secret.txt"), []byte("x"), 0o644)
+	testutil.MkdirAll(t, filepath.Join(victim, "refs"), 0o755)
+	testutil.MkdirAll(t, filepath.Join(victim, "snapshots", "rev"), 0o755)
+	testutil.WriteFile(t, filepath.Join(victim, "refs", "main"), []byte("SECRETREF"), 0o644)
+	testutil.WriteFile(t, filepath.Join(victim, "snapshots", "rev", "secret.txt"), []byte("x"), 0o644)
 
 	cfg := DefaultConfig()
 	cfg.CacheDir = cacheDir

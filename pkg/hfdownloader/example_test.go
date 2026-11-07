@@ -42,7 +42,9 @@ func ExampleDownload() {
 	}
 
 	// Cleanup
-	os.RemoveAll("./example_output")
+	if err := os.RemoveAll("./example_output"); err != nil {
+		fmt.Printf("Cleanup: %v\n", err)
+	}
 }
 
 func ExampleDownload_withFilters() {

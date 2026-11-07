@@ -72,6 +72,9 @@ func TestGGUF_SplitShardsInFolders(t *testing.T) {
 		"imatrix_unsloth.gguf",
 	)
 	info := analyzeGGUF(files)
+	if info == nil {
+		t.Fatal("analyzeGGUF returned nil")
+	}
 	if got := len(info.Quantizations); got != 3 {
 		t.Fatalf("got %d quantizations, want 3 (one per quant, shards merged)", got)
 	}
@@ -110,6 +113,9 @@ func TestGGUF_MTPDraftsAreCompanions(t *testing.T) {
 		"mtp-gemma-4-12B-it.gguf",
 	)
 	info := analyzeGGUF(files)
+	if info == nil {
+		t.Fatal("analyzeGGUF returned nil")
+	}
 	if len(info.Quantizations) != 1 || info.Quantizations[0].Name != "UD-Q4_K_XL" {
 		t.Fatalf("quantizations = %v; want only UD-Q4_K_XL", quantNames(info))
 	}
@@ -152,6 +158,9 @@ func TestGGUF_FolderNamedCustomQuants(t *testing.T) {
 		"mmproj-Qwen3.5-27B-Q8_0.gguf",
 	)
 	info := analyzeGGUF(files)
+	if info == nil {
+		t.Fatal("analyzeGGUF returned nil")
+	}
 	names := quantNames(info)
 	sort.Strings(names)
 	if strings.Join(names, ",") != "Q3_LynnStyle,Q4_LynnStyle,Q8_0" {

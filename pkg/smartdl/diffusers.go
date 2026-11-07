@@ -269,7 +269,7 @@ func GetComponentFiles(files []FileInfo, componentName string) []FileInfo {
 }
 
 // CalculateDownloadSize calculates total size for selected components and variant.
-func CalculateDownloadSize(info *DiffusersInfo, files []FileInfo, selectedComponents []string, variant string) int64 {
+func CalculateDownloadSize(_ *DiffusersInfo, files []FileInfo, selectedComponents []string, variant string) int64 {
 	var total int64
 	selected := make(map[string]bool)
 	for _, c := range selectedComponents {
@@ -283,21 +283,29 @@ func CalculateDownloadSize(info *DiffusersInfo, files []FileInfo, selectedCompon
 			continue
 		}
 
-		// Check variant match
-		name := strings.ToLower(f.Name)
-		if variant != "" {
-			// Skip files that are different variant
-			for _, v := range []string{"fp16", "fp32", "bf16"} {
-				if v != variant && (strings.Contains(name, "."+v+".") || strings.Contains(name, "_"+v+".")) {
-					continue
-				}
-			}
+		// Skip weights saved in a different precision variant. (The check
+		// used to `continue` only its own inner loop, so variant filtered
+		// nothing.)
+		if variant != "" && isOtherVariant(strings.ToLower(f.Name), strings.ToLower(variant)) {
+			continue
 		}
 
 		total += f.Size
 	}
 
 	return total
+}
+
+// isOtherVariant reports whether the lower-cased file name carries a
+// precision-variant marker (".fp16." or "_fp16." and so on) other than
+// variant. Files without a marker are not another variant.
+func isOtherVariant(name, variant string) bool {
+	for _, v := range []string{"fp16", "fp32", "bf16"} {
+		if v != variant && (strings.Contains(name, "."+v+".") || strings.Contains(name, "_"+v+".")) {
+			return true
+		}
+	}
+	return false
 }
 
 // DiffusersToSelectableItems converts Diffusers components to SelectableItems.

@@ -75,7 +75,7 @@ func NewSelectorModel(info *smartdl.RepoInfo) *SelectorModel {
 
 	// Group items by category
 	categoryMap := make(map[string][]smartdl.SelectableItem)
-	categoryOrder := []string{}
+	var categoryOrder []string
 
 	for _, item := range info.SelectableItems {
 		cat := item.Category
@@ -416,9 +416,7 @@ func RunSelector(info *smartdl.RepoInfo) (*SelectorResult, error) {
 	}
 
 	m := finalModel.(*SelectorModel)
-	result := m.Result()
-
-	return &result, nil
+	return new(m.Result()), nil
 }
 
 // humanSize converts bytes to human readable format.

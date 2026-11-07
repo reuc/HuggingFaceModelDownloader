@@ -89,7 +89,7 @@ func computeSHA256Ctx(ctx context.Context, path string, onProgress func(done int
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	h := sha256.New()
 	if _, err := copyCtx(ctx, h, f, onProgress); err != nil {
@@ -106,7 +106,7 @@ func matchesGitOID(path, oid string) bool {
 	if err != nil {
 		return false
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	fi, err := f.Stat()
 	if err != nil || !fi.Mode().IsRegular() {
 		return false
@@ -120,7 +120,7 @@ func matchesGitOID(path, oid string) bool {
 	default:
 		return false
 	}
-	fmt.Fprintf(h, "blob %d\x00", fi.Size())
+	_, _ = fmt.Fprintf(h, "blob %d\x00", fi.Size()) // hash.Hash writes never fail
 	if _, err := io.Copy(h, f); err != nil {
 		return false
 	}

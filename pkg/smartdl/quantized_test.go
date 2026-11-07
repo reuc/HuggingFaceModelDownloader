@@ -80,7 +80,7 @@ func TestAnalyzeQuantized(t *testing.T) {
 		metadata := map[string]interface{}{
 			"quantize_config.json": map[string]interface{}{
 				"quant_method":    "exl2",
-				"bits_per_weight": float64(4.5),
+				"bits_per_weight": 4.5,
 			},
 		}
 
