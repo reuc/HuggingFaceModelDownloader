@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/reuc/HuggingFaceModelDownloader/pkg/hfdownloader"
 )
 
 var testCacheDir string
@@ -133,6 +135,40 @@ func TestAPI_UpdateSettings_CantChangeCacheDir(t *testing.T) {
 	// Path should NOT have changed
 	if srv.config.CacheDir != originalCache {
 		t.Errorf("CacheDir should not be changeable via API! Got %s", srv.config.CacheDir)
+	}
+}
+
+// Skipping TLS verification exposes the Hub token to anyone on the path, so
+// the (by default unauthenticated) settings API may disable it but never
+// enable it; that takes the server's config file.
+func TestAPI_UpdateSettings_CantEnableInsecureTLS(t *testing.T) {
+	post := func(srv *Server, body string) int {
+		req := httptest.NewRequest("POST", "/api/settings", bytes.NewBufferString(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		srv.handleUpdateSettings(w, req)
+		return w.Code
+	}
+
+	srv := newTestServer()
+	if code := post(srv, `{"proxy": {"url": "http://attacker:8080", "insecureSkipVerify": true}}`); code != http.StatusBadRequest {
+		t.Errorf("enabling insecureSkipVerify: got %d, want 400", code)
+	}
+	if srv.config.Proxy != nil {
+		t.Errorf("rejected request still changed the proxy: %+v", *srv.config.Proxy)
+	}
+
+	// Set by the operator (config file): the API may keep it or turn it off.
+	srv = newTestServer()
+	srv.config.Proxy = &hfdownloader.ProxyConfig{URL: "http://corp-proxy:3128", InsecureSkipVerify: true}
+	if code := post(srv, `{"proxy": {"insecureSkipVerify": true}}`); code != http.StatusOK {
+		t.Errorf("re-sending the operator's insecureSkipVerify=true: got %d, want 200", code)
+	}
+	if code := post(srv, `{"proxy": {"insecureSkipVerify": false}}`); code != http.StatusOK {
+		t.Errorf("disabling insecureSkipVerify: got %d, want 200", code)
+	}
+	if srv.config.Proxy == nil || srv.config.Proxy.InsecureSkipVerify {
+		t.Errorf("insecureSkipVerify still on after disabling it: %+v", srv.config.Proxy)
 	}
 }
 

@@ -270,7 +270,14 @@ func applyFilters(items []PlanItem, filters []string, exact, isDataset bool) []P
 		}
 		switch {
 		case matched != "":
-			it.Subdir = matched
+			// With AppendFilterSubdir the filter becomes a directory name.
+			// Filters are user input and only have to be a substring of the
+			// path, so "../.." matches "a../..b.gguf": a filter that isn't a
+			// safe relative path still selects the file but names no
+			// directory, so it can't place files outside the output.
+			if !strings.Contains(matched, "..") && !unsafeRepoPath(matched) {
+				it.Subdir = matched
+			}
 		case it.LFS && isPayloadFile(it.RelativePath, isDataset):
 			continue
 		}

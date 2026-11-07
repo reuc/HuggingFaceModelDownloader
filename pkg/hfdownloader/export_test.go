@@ -305,7 +305,8 @@ func TestValidRevision(t *testing.T) {
 			t.Errorf("%q rejected", ok)
 		}
 	}
-	for _, bad := range []string{"", "..", "../x", "a/../b", "/abs", `a\b`, "a//b", "x\x00", "C:foo"} {
+	// git ref names may not contain ".." anywhere (git check-ref-format).
+	for _, bad := range []string{"", "..", "../x", "a/../b", "/abs", `a\b`, "a//b", "x\x00", "C:foo", "a..b", "refs/pr/1..2"} {
 		if ValidRevision(bad) {
 			t.Errorf("%q accepted", bad)
 		}

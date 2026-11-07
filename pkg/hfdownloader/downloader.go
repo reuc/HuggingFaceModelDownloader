@@ -357,7 +357,16 @@ LOOP:
 				// Download to a temp location, moved to its blob later.
 				dst = filepath.Join(repoDir.BlobsDir(), blobTempName(it))
 			} else {
-				// Legacy mode: flat directory structure
+				// Legacy mode: flat directory structure. finalRel joins the
+				// filter subdirectory and the repo path; never write outside
+				// base even if either check upstream changes.
+				if unsafeRepoPath(finalRel) {
+					select {
+					case errCh <- fmt.Errorf("unsafe output path %q", finalRel):
+					default:
+					}
+					return
+				}
 				base := destinationBase(job, cfg)
 				dst = filepath.Join(base, finalRel)
 				skipCheck = func() (bool, string, error) {

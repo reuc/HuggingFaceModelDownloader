@@ -239,7 +239,7 @@
     const remaining = files.length - 20;
     const moreFiles = remaining > 0
       ? `<button type="button" class="analysis-file analysis-files-toggle" onclick="toggleAnalysisFilesExpanded()">
-           ${expanded ? 'Show fewer files' : `... and ${remaining} more files (click to show all)`}
+           ${expanded ? 'Show fewer files' : `... and ${escapeHtml(remaining)} more files (click to show all)`}
          </button>`
       : '';
 
@@ -360,8 +360,8 @@
           </div>
           <div class="ref-actions">
             <span class="ref-selection-count" id="refSelectionCount"></span>
-            <button class="btn btn-secondary btn-sm" id="refAnalyzeBtn" onclick="analyzeSelectedRef(${data.is_dataset})">Analyze</button>
-            <button class="btn btn-primary btn-sm" id="refDownloadBtn" onclick="downloadSelectedRefs(${jsArg(data.repo)}, ${data.is_dataset})">Download</button>
+            <button class="btn btn-secondary btn-sm" id="refAnalyzeBtn" onclick="analyzeSelectedRef(${data.is_dataset ? 'true' : 'false'})">Analyze</button>
+            <button class="btn btn-primary btn-sm" id="refDownloadBtn" onclick="downloadSelectedRefs(${jsArg(data.repo)}, ${data.is_dataset ? 'true' : 'false'})">Download</button>
           </div>
         </div>
       `;
@@ -371,7 +371,7 @@
           <h5>Branches</h5>
           <div class="ref-list">
             ${branches.map(b => `
-              <button class="ref-btn ${b.name === 'main' ? 'ref-default' : ''}" onclick="selectRevision(${jsArg(b.name)}, ${data.is_dataset})">
+              <button class="ref-btn ${b.name === 'main' ? 'ref-default' : ''}" onclick="selectRevision(${jsArg(b.name)}, ${data.is_dataset ? 'true' : 'false'})">
                 ${branchIcon}
                 ${escapeHtml(b.name)}
                 ${b.name === 'main' ? '<span class="ref-badge">default</span>' : ''}
@@ -389,14 +389,14 @@
           <h5>Tags</h5>
           <div class="ref-list">
             ${tags.slice(0, 10).map(t => `
-              <button class="ref-btn" onclick="selectRevision(${jsArg(t.name)}, ${data.is_dataset})">
+              <button class="ref-btn" onclick="selectRevision(${jsArg(t.name)}, ${data.is_dataset ? 'true' : 'false'})">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
                   <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/>
                 </svg>
                 ${escapeHtml(t.name)}
               </button>
             `).join('')}
-            ${tags.length > 10 ? `<div class="ref-more">... and ${tags.length - 10} more tags</div>` : ''}
+            ${tags.length > 10 ? `<div class="ref-more">... and ${escapeHtml(tags.length - 10)} more tags</div>` : ''}
           </div>
         </div>
       `;
@@ -411,7 +411,7 @@
       ${branchesHtml}
       ${tagsHtml}
       <div class="form-actions" style="margin-top: 20px;">
-        <button class="btn btn-ghost" onclick="hideModal(); selectRevision('main', ${data.is_dataset})">Use default (main)</button>
+        <button class="btn btn-ghost" onclick="hideModal(); selectRevision('main', ${data.is_dataset ? 'true' : 'false'})">Use default (main)</button>
       </div>
     `);
     if (multiBranch) updateRefSelection();
@@ -711,7 +711,7 @@
             <button class="btn btn-secondary" onclick="showAdvancedOptions()">
               Advanced Options
             </button>
-            <button class="btn btn-primary" onclick="startWizardDownload(${jsArg(data.repo)}, ${data.is_dataset})">
+            <button class="btn btn-primary" onclick="startWizardDownload(${jsArg(data.repo)}, ${data.is_dataset ? 'true' : 'false'})">
               Download
             </button>
           </div>
@@ -1328,7 +1328,7 @@
       const datasets = data.repos.length - models;
       status.innerHTML = data.repos.length === 0
         ? `<p class="form-hint">${escapeHtml(raw)} has no public models or datasets.</p>`
-        : `<p class="author-summary"><strong>${escapeHtml(data.author)}</strong>: ${models} model${models === 1 ? '' : 's'}, ${datasets} dataset${datasets === 1 ? '' : 's'}, newest first. Tick the ones to download; sizes load as rows scroll into view.</p>`;
+        : `<p class="author-summary"><strong>${escapeHtml(data.author)}</strong>: ${escapeHtml(models)} model${models === 1 ? '' : 's'}, ${escapeHtml(datasets)} dataset${datasets === 1 ? '' : 's'}, newest first. Tick the ones to download; sizes load as rows scroll into view.</p>`;
       authorTable.setRows(data.repos.map(r => ({
         repo: r.repo,
         kind: r.is_dataset ? 'dataset' : 'model',
@@ -1454,13 +1454,13 @@
       const filesHtml = data.files?.map(f => `
         <div class="analysis-file">
           <span class="analysis-file-name">${escapeHtml(f.path)}</span>
-          <span class="analysis-file-size">${formatBytes(f.size)}</span>
+          <span class="analysis-file-size">${escapeHtml(formatBytes(f.size))}</span>
         </div>
       `).join('') || '<p>No files found</p>';
 
       setModalContent(`
         <p style="margin-bottom: 16px; color: var(--color-text-secondary);">
-          ${data.totalFiles} files, ${formatBytes(data.totalSize)} total
+          ${escapeHtml(data.totalFiles)} files, ${escapeHtml(formatBytes(data.totalSize))} total
         </p>
         <div class="analysis-files" style="max-height: 400px;">
           ${filesHtml}
@@ -2081,7 +2081,7 @@
     const remaining = files.length - 20;
     const moreFiles = remaining > 0
       ? `<button type="button" class="cache-files-more" onclick="toggleCacheDetailFilesExpanded()">
-           ${expanded ? 'Show fewer files' : `... and ${remaining} more files (click to show all)`}
+           ${expanded ? 'Show fewer files' : `... and ${escapeHtml(remaining)} more files (click to show all)`}
          </button>`
       : '';
 
@@ -2995,7 +2995,7 @@
     }
 
     // Render the diff items
-    const typeIcon = (type) => type === 'model'
+    const typeIcon = (isModel) => isModel
       ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
          </svg>`
@@ -3024,10 +3024,10 @@
       ${diffs.map(d => `
         <div class="diff-item">
           <div>
-            <span class="diff-item-status ${escapeHtml(d.status)}">${statusLabel(d.status)}</span>
+            <span class="diff-item-status ${escapeHtml(d.status)}">${escapeHtml(statusLabel(d.status))}</span>
           </div>
           <div class="diff-item-type">
-            ${typeIcon(d.type)}
+            ${typeIcon(d.type === 'model')}
             ${escapeHtml(d.type)}
           </div>
           <div class="diff-item-repo">${escapeHtml(d.repo)}</div>
@@ -3273,12 +3273,11 @@
         <div class="related-downloads">`;
 
     downloads.forEach(dl => {
-      const requiredBadge = dl.required ? '<span class="badge-required">Required</span>' : '';
 
       html += `
         <div class="related-download-card ${dl.required ? 'required' : ''}">
           <div class="related-download-info">
-            <span class="related-download-label">${escapeHtml(dl.label)} ${requiredBadge}</span>
+            <span class="related-download-label">${escapeHtml(dl.label)} ${dl.required ? '<span class="badge-required">Required</span>' : ''}</span>
             <span class="related-download-repo">${escapeHtml(dl.repo)}</span>
             ${dl.description ? `<span class="related-download-desc">${escapeHtml(dl.description)}</span>` : ''}
             ${dl.size_human ? `<span class="related-download-size">${escapeHtml(dl.size_human)}</span>` : ''}

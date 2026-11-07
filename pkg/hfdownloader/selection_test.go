@@ -112,6 +112,29 @@ func TestApplyFilters_RealLayouts(t *testing.T) {
 	}
 }
 
+// A filter only has to be a substring of a path, so a traversal filter can
+// match an odd but valid file name. It must still select the file, but never
+// become a directory (AppendFilterSubdir joins Subdir into output paths).
+func TestApplyFilters_UnsafeFilterNamesNoSubdir(t *testing.T) {
+	got := applyFilters(items("a../..b.gguf", "x/abs.gguf", "w\\in.gguf", "Model-Q4_K_M.gguf"),
+		[]string{"../..", "/abs", "w\\in", "Q4_K_M"}, false, false)
+	subdirs := map[string]string{}
+	for _, it := range got {
+		subdirs[it.RelativePath] = it.Subdir
+	}
+	if len(got) != 4 {
+		t.Fatalf("got %d items %v; every file matches a filter and must stay selected", len(got), subdirs)
+	}
+	for _, p := range []string{"a../..b.gguf", "x/abs.gguf", "w\\in.gguf"} {
+		if s := subdirs[p]; s != "" {
+			t.Errorf("%s: Subdir = %q; an unsafe filter must not name a directory", p, s)
+		}
+	}
+	if s := subdirs["Model-Q4_K_M.gguf"]; s != "Q4_K_M" {
+		t.Errorf("Model-Q4_K_M.gguf: Subdir = %q; want Q4_K_M", s)
+	}
+}
+
 func TestApplyFilters_SubdirRecordsLongestFilter(t *testing.T) {
 	got := applyFilters(items("Model-Q4_K_M.gguf", "Model-Q4_K.gguf"), []string{"Q4_K", "Q4_K_M"}, false, false)
 	subdirs := map[string]string{}

@@ -15,7 +15,15 @@ import (
 // format. Each part may contain only letters, digits, '-', '_' and '.', and
 // may not be "." or "..". Repo IDs become cache and output paths, so anything
 // looser (e.g. "x/../../etc") would allow path traversal.
+//
+// ".." is rejected anywhere, as the Hub does (huggingface_hub's
+// validate_repo_id). The explicit strings.Contains check is also what lets
+// static analysis (CodeQL go/path-injection) see this function as a
+// path-traversal guard.
 func IsValidModelName(modelName string) bool {
+	if strings.Contains(modelName, "..") {
+		return false
+	}
 	owner, name, ok := strings.Cut(modelName, "/")
 	return ok && validRepoIDPart(owner) && validRepoIDPart(name)
 }
@@ -25,8 +33,13 @@ func IsValidModelName(modelName string) bool {
 // snapshots/<commit>), so "..", absolute paths, backslashes and NUL bytes
 // are rejected — export once accepted "../../../../secret" and read files
 // outside the cache.
+//
+// ".." is rejected anywhere, not only as a path segment: git ref names may
+// not contain it (git check-ref-format) and commits are hex, so no valid
+// revision does. As in IsValidModelName, the explicit check also lets static
+// analysis see this function as a path-traversal guard.
 func ValidRevision(rev string) bool {
-	if rev == "" || len(rev) > 256 || strings.HasPrefix(rev, "/") || strings.ContainsAny(rev, "\\\x00:") {
+	if rev == "" || len(rev) > 256 || strings.HasPrefix(rev, "/") || strings.ContainsAny(rev, "\\\x00:") || strings.Contains(rev, "..") {
 		return false
 	}
 	for _, seg := range strings.Split(rev, "/") {

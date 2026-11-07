@@ -507,6 +507,16 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 			msg = fmt.Sprintf("proxy url %q must use http, https, socks5 or socks5h", *req.Proxy.URL)
 		}
 	}
+	if msg == "" && req.Proxy != nil && req.Proxy.InsecureSkipVerify != nil && *req.Proxy.InsecureSkipVerify {
+		// Skipping TLS verification lets anyone on the network path read the
+		// Hub token. This API has no auth unless the server was started with
+		// it, so a client could point the proxy at itself and switch
+		// verification off. The API may re-enable verification; disabling it
+		// takes the server's config file, i.e. access to the host.
+		if cur := s.settingsConfig(); cur.Proxy == nil || !cur.Proxy.InsecureSkipVerify {
+			msg = "proxy insecureSkipVerify can't be enabled from the API; set proxy.insecure_skip_verify in the server's config file"
+		}
+	}
 	if msg != "" {
 		writeError(w, http.StatusBadRequest, "Invalid settings", msg)
 		return
