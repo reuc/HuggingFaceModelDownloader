@@ -435,7 +435,12 @@ Resume a paused job.
 
 **Note**: Only `paused` jobs can be resumed (and only `running` jobs paused).
 Resumed jobs restart from `queued` status. Progress is reset, but
-already-downloaded files are automatically skipped.
+already-downloaded files are automatically skipped and partially downloaded
+ones continue from the data on disk — also when the job was paused while
+verifying a file (it is checked, not downloaded again) or when the
+`connections` setting changed meanwhile (a file keeps the split it started
+with). A job always downloads to its `outputDir`, even if the server was
+restarted with another cache or local directory since it was created.
 
 **Example**
 

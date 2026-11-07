@@ -705,8 +705,19 @@ func (m *JobManager) runJob(job *Job) {
 
 	// Local mode: write real files into LocalDir instead of the HF cache
 	// layout. Clearing CacheDir forces flat-file output.
-	if cfg.LocalDir != "" {
-		settings.OutputDir = cfg.LocalDir
+	flat, dir := cfg.LocalDir != "", cfg.LocalDir
+	if job.OutputDir != "" {
+		// A job downloads where it was created to go (its card shows
+		// OutputDir), so one resumed, redownloaded or restored after the
+		// server restarted with other storage settings continues from the
+		// data already there instead of starting over somewhere else.
+		flat, dir = job.Flat, job.OutputDir
+		if !flat {
+			settings.CacheDir = job.OutputDir
+		}
+	}
+	if flat {
+		settings.OutputDir = dir
 		settings.CacheDir = ""
 	}
 
@@ -717,10 +728,7 @@ func (m *JobManager) runJob(job *Job) {
 	// multipart ticker keeps reporting unchanged bytes during a retry).
 	var activityPath string
 	var activityMark int64
-	// Speed: an exponential moving average over ~1s samples.
-	var speedLastBytes int64
-	var speedLastTime time.Time
-	var speedEMA float64
+	var speed speedMeter
 	findFile := func(path string) *JobFileProgress {
 		for i := range job.Files {
 			if job.Files[i].Path == path {
@@ -797,21 +805,9 @@ func (m *JobManager) runJob(job *Job) {
 				total += f.Downloaded
 			}
 			job.Progress.DownloadedBytes = total
-			now := time.Now()
-			if speedLastTime.IsZero() {
-				speedLastTime, speedLastBytes = now, total
-			} else if dt := now.Sub(speedLastTime).Seconds(); dt >= 1 {
-				rate := float64(total-speedLastBytes) / dt
-				if rate < 0 {
-					rate = 0
-				}
-				if speedEMA == 0 {
-					speedEMA = rate
-				} else {
-					speedEMA = 0.3*rate + 0.7*speedEMA
-				}
-				job.Progress.BytesPerSecond = int64(speedEMA)
-				speedLastTime, speedLastBytes = now, total
+			speed.seen(evt.Path, evt.Downloaded)
+			if bps, ok := speed.sample(time.Now(), job.Files); ok {
+				job.Progress.BytesPerSecond = bps
 			}
 
 		case "file_done":
@@ -819,10 +815,14 @@ func (m *JobManager) runJob(job *Job) {
 				job.Progress.Activity = ""
 				activityPath = ""
 			}
+			skipped := strings.HasPrefix(evt.Message, "skip")
+			if !skipped {
+				speed.seen(evt.Path, 0) // a file downloaded with no progress report
+			}
 			for i := range job.Files {
 				if job.Files[i].Path == evt.Path {
 					job.Files[i].Status = "complete"
-					if strings.HasPrefix(evt.Message, "skip") {
+					if skipped {
 						job.Files[i].Status = "skipped" // already in the cache
 					}
 					job.Files[i].Downloaded = job.Files[i].TotalBytes
@@ -857,6 +857,58 @@ func (m *JobManager) runJob(job *Job) {
 	m.saveJobs()
 
 	m.notifyListeners(endSnap)
+}
+
+// speedMeter estimates a job's download speed: an exponential moving average
+// over ~1s samples of the bytes this run transferred. Each file counts from
+// the size it first reported in the run, so neither the data a resumed file
+// already had on disk nor files skipped as complete show up as a burst of
+// speed (which also made the remaining-time estimate wildly short).
+type speedMeter struct {
+	base      map[string]int64 // first reported size of each file this run
+	lastTime  time.Time
+	lastBytes int64
+	ema       float64
+}
+
+// seen records the size a file had when this run first reported it.
+func (s *speedMeter) seen(path string, downloaded int64) {
+	if s.base == nil {
+		s.base = map[string]int64{}
+	}
+	if _, ok := s.base[path]; !ok {
+		s.base[path] = downloaded
+	}
+}
+
+// sample returns the updated speed once at least a second has passed since
+// the previous sample.
+func (s *speedMeter) sample(now time.Time, files []JobFileProgress) (int64, bool) {
+	var moved int64
+	for _, f := range files {
+		if b, ok := s.base[f.Path]; ok && f.Downloaded > b {
+			moved += f.Downloaded - b
+		}
+	}
+	if s.lastTime.IsZero() {
+		s.lastTime, s.lastBytes = now, moved
+		return 0, false
+	}
+	dt := now.Sub(s.lastTime).Seconds()
+	if dt < 1 {
+		return 0, false
+	}
+	rate := float64(moved-s.lastBytes) / dt
+	if rate < 0 {
+		rate = 0
+	}
+	if s.ema == 0 {
+		s.ema = rate
+	} else {
+		s.ema = 0.3*rate + 0.7*s.ema
+	}
+	s.lastTime, s.lastBytes = now, moved
+	return int64(s.ema), true
 }
 
 // finishRunStatusLocked records a run's outcome on job and reports whether it
