@@ -38,7 +38,10 @@ func TestIsValidModelName(t *testing.T) {
 		{"absolute in name", "x//etc/passwd", false},
 		{"colon (repo:filter not stripped)", "owner/repo:q4_k_m", false},
 		{"NUL byte", "owner/re\x00po", false},
-		{"dots inside are fine", "owner/..model..", true},
+		{"single dots inside are fine", "owner/model.v1.2", true},
+		// The Hub rejects ".." anywhere in a repo ID (validate_repo_id).
+		{"dotdot inside name", "owner/..model..", false},
+		{"dotdot inside owner", "own..er/model", false},
 	}
 
 	for _, tt := range tests {
