@@ -72,21 +72,42 @@ jobs:
     name: Generate checksums
     runs-on: ubuntu-latest
     needs: build
+    outputs:
+      hashes: ${{ steps.hash.outputs.hashes }}
     steps:
       - name: Download release assets
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p release-files
-          gh release download ${{ github.ref_name }} -D release-files -R ${{ github.repository }}
+          gh release download ${{ github.ref_name }} -D release-files -R ${{ github.repository }} -p 'hfdownloader_*'
 
       - name: Generate checksums
+        id: hash
         run: |
           cd release-files
-          sha256sum * > checksums.txt
+          sha256sum hfdownloader_* > checksums.txt
           cat checksums.txt
+          # sha256sum output, base64-encoded, is the subject format the SLSA generator expects.
+          echo "hashes=$(base64 -w0 checksums.txt)" >> "$GITHUB_OUTPUT"
 
       - name: Upload checksums
         uses: softprops/action-gh-release@v3
         with:
           files: release-files/checksums.txt
+
+  # SLSA level 3 provenance for the released binaries, attached to the release
+  # as an .intoto.jsonl file. Verify with https://github.com/slsa-framework/slsa-verifier.
+  # The generator must be referenced by tag (not SHA) for its builder verification.
+  provenance:
+    name: SLSA provenance
+    needs: checksums
+    permissions:
+      actions: read   # To read the workflow path.
+      id-token: write # To sign the provenance.
+      contents: write # To add assets to a release.
+    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.1.0
+    with:
+      base64-subjects: "${{ needs.checksums.outputs.hashes }}"
+      provenance-name: "hfdownloader_${{ github.ref_name }}.intoto.jsonl"
+      upload-assets: true
