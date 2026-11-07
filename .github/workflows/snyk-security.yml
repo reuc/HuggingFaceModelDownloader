@@ -42,19 +42,19 @@ jobs:
         if: env.SNYK_TOKEN == ''
         run: echo "::notice title=Snyk Security skipped::SNYK_TOKEN secret is not set; add it under Settings > Secrets and variables > Actions to enable these scans."
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         if: env.SNYK_TOKEN != ''
 
       # Snyk Open Source resolves Go module dependencies with the go toolchain.
       - name: Set up Go
         if: env.SNYK_TOKEN != ''
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
 
       - name: Set up Snyk CLI
         if: env.SNYK_TOKEN != ''
-        uses: snyk/actions/setup@806182742461562b67788a64410098c9d9b96adb
+        uses: snyk/actions/setup@11b673cfb4b0dc0d860a1323caa199d54950dcce
 
         # Snyk Code (SAST). Findings go to Code Scanning instead of failing the build.
       - name: Snyk Code test

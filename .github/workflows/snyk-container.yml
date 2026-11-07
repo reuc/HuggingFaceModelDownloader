@@ -40,7 +40,7 @@ jobs:
       if: env.SNYK_TOKEN == ''
       run: echo "::notice title=Snyk Container skipped::SNYK_TOKEN secret is not set; add it under Settings > Secrets and variables > Actions to enable this scan."
 
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
       if: env.SNYK_TOKEN != ''
 
     - name: Build the Docker image
@@ -51,7 +51,7 @@ jobs:
       if: env.SNYK_TOKEN != ''
       # Report findings to Code Scanning rather than failing the build.
       continue-on-error: true
-      uses: snyk/actions/docker@14818c4695ecc4045f33c9cee9e795a788711ca4
+      uses: snyk/actions/docker@11b673cfb4b0dc0d860a1323caa199d54950dcce
       with:
         image: ${{ env.IMAGE }}
         args: --file=Dockerfile
