@@ -3,13 +3,13 @@
 # separate terms of service, privacy policy, and support
 # documentation.
 
-# A sample workflow which checks out the code, builds a container
-# image using Docker and scans that image for vulnerabilities using
-# Snyk. The results are then uploaded to GitHub Security Code Scanning
+# Builds the container image from the Dockerfile and scans it for
+# vulnerabilities with Snyk. Results are uploaded to GitHub Code Scanning.
 #
-# For more examples, including how to limit scans to only high-severity
-# issues, monitor images for newly disclosed vulnerabilities in Snyk and
-# fail PR checks for new vulnerabilities, see https://github.com/snyk/actions/
+# Requires a SNYK_TOKEN repository secret (https://github.com/snyk/actions#getting-your-snyk-token).
+# Without it (including PRs from forks) the scan is skipped instead of failing.
+#
+# For more examples, see https://github.com/snyk/actions/
 
 name: Snyk Container
 
@@ -32,24 +32,34 @@ jobs:
       security-events: write # for github/codeql-action/upload-sarif to upload SARIF results
       actions: read # only required for a private repository by github/codeql-action/upload-sarif to get the Action run status
     runs-on: ubuntu-latest
+    env:
+      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+      IMAGE: hfdownloader:snyk
     steps:
-    - uses: actions/checkout@v4
-    - name: Build a Docker image
-      run: docker build -t your/image-to-test .
-    - name: Run Snyk to check Docker image for vulnerabilities
-      # Snyk can be used to break the build when it detects vulnerabilities.
-      # In this case we want to upload the issues to GitHub Code Scanning
+    - name: Skip if SNYK_TOKEN is not set
+      if: env.SNYK_TOKEN == ''
+      run: echo "::notice title=Snyk Container skipped::SNYK_TOKEN secret is not set; add it under Settings > Secrets and variables > Actions to enable this scan."
+
+    - uses: actions/checkout@v6
+      if: env.SNYK_TOKEN != ''
+
+    - name: Build the Docker image
+      if: env.SNYK_TOKEN != ''
+      run: docker build -t "$IMAGE" .
+
+    - name: Run Snyk to check the Docker image for vulnerabilities
+      if: env.SNYK_TOKEN != ''
+      # Report findings to Code Scanning rather than failing the build.
       continue-on-error: true
       uses: snyk/actions/docker@14818c4695ecc4045f33c9cee9e795a788711ca4
-      env:
-        # In order to use the Snyk Action you will need to have a Snyk API token.
-        # More details in https://github.com/snyk/actions#getting-your-snyk-token
-        # or you can signup for free at https://snyk.io/login
-        SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
       with:
-        image: your/image-to-test
+        image: ${{ env.IMAGE }}
         args: --file=Dockerfile
+
     - name: Upload result to GitHub Code Scanning
-      uses: github/codeql-action/upload-sarif@v3
+      # Snyk writes no SARIF if it errored before scanning; don't fail on top of that.
+      if: env.SNYK_TOKEN != '' && hashFiles('snyk.sarif') != ''
+      uses: github/codeql-action/upload-sarif@v4
       with:
         sarif_file: snyk.sarif
+        category: snyk-container
