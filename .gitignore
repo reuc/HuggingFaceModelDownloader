@@ -14,6 +14,7 @@
 .idea/
 .vscode/
 .claude/
+.scratch/
 *.swp
 *.swo
 .cache
