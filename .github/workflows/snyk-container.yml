@@ -56,6 +56,16 @@ jobs:
         image: ${{ env.IMAGE }}
         args: --file=Dockerfile
 
+    - name: Drop non-numeric security-severity values from the SARIF
+      # Snyk writes "security-severity": "null" for issues with no CVSS score,
+      # and Code Scanning rejects the whole file ("is not a number: null").
+      if: env.SNYK_TOKEN != '' && hashFiles('snyk.sarif') != ''
+      run: |
+        jq '.runs[].tool.driver.rules |= ((. // []) | map(
+              if ((.properties["security-severity"] // "") | tostring | test("^[0-9]+(\\.[0-9]+)?$"))
+              then . else del(.properties["security-severity"]) end))' snyk.sarif > snyk.fixed.sarif
+        mv snyk.fixed.sarif snyk.sarif
+
     - name: Upload result to GitHub Code Scanning
       # Snyk writes no SARIF if it errored before scanning; don't fail on top of that.
       if: env.SNYK_TOKEN != '' && hashFiles('snyk.sarif') != ''
