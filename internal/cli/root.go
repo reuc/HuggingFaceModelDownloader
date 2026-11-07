@@ -6,6 +6,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -20,7 +21,6 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/reuc/HuggingFaceModelDownloader/internal/server"
-	"github.com/reuc/HuggingFaceModelDownloader/internal/tui"
 	"github.com/reuc/HuggingFaceModelDownloader/pkg/hfdownloader"
 )
 
@@ -37,10 +37,24 @@ type RootOpts struct {
 
 // Execute runs the CLI with the given version string.
 func Execute(version string) error {
-	ro := &RootOpts{}
 	ctx, cancel := signalContext(context.Background())
 	defer cancel()
 
+	root := newRootCmd(ctx, version)
+	if err := root.ExecuteContext(ctx); err != nil {
+		fmt.Fprintln(os.Stderr, "error:", err)
+		var re *resumableError
+		if errors.As(err, &re) {
+			resumeHint(os.Stderr, re.id)
+		}
+		return err
+	}
+	return nil
+}
+
+// newRootCmd builds the hfdownloader command tree; ctx cancels downloads.
+func newRootCmd(ctx context.Context, version string) *cobra.Command {
+	ro := &RootOpts{}
 	root := &cobra.Command{
 		Use:           "hfdownloader",
 		Short:         "Fast, resumable downloader for Hugging Face models & datasets",
@@ -72,6 +86,7 @@ func Execute(version string) error {
 	root.AddCommand(newFlattenCmd(ro))
 	root.AddCommand(newAnalyzeCmd(ctx, ro))
 	root.AddCommand(newProxyCmd(ro))
+	root.AddCommand(newResumeCmd(ctx, ro))
 
 	// Use download as the default action, but on a bare invocation with no
 	// arguments — e.g. double-clicking the .exe on Windows — show help instead
@@ -85,12 +100,7 @@ func Execute(version string) error {
 		return downloadRunE(cmd, args)
 	}
 	root.SetHelpCommand(&cobra.Command{Use: "help", Hidden: true})
-
-	if err := root.ExecuteContext(ctx); err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
-		return err
-	}
-	return nil
+	return root
 }
 
 func newDownloadCmd(ctx context.Context, ro *RootOpts) *cobra.Command {
@@ -150,20 +160,7 @@ func newDownloadCmd(ctx context.Context, ro *RootOpts) *cobra.Command {
 				return err
 			}
 
-			// Progress mode selection
-			var progress hfdownloader.ProgressFunc
-			if ro.JSONOut {
-				progress = jsonProgress(os.Stdout)
-			} else if ro.Quiet {
-				progress = cliProgress(ro, finalJob)
-			} else {
-				// Live TUI
-				ui := tui.NewLiveRenderer(finalJob, finalCfg)
-				defer ui.Close()
-				progress = ui.Handler()
-			}
-
-			return hfdownloader.Download(ctx, finalJob, finalCfg, progress)
+			return runDownload(ctx, ro, finalJob, finalCfg)
 		},
 	}
 
@@ -346,9 +343,10 @@ func buildCommandString(cmd *cobra.Command, job hfdownloader.Job, cfg hfdownload
 	if cfg.Verify != "size" && cfg.Verify != "" {
 		parts = append(parts, "--verify", cfg.Verify)
 	}
-	// Proxy (URL only, credentials intentionally omitted for security)
+	// Proxy (URL only, credentials intentionally omitted for security —
+	// including any user:password embedded in the URL itself)
 	if cfg.Proxy != nil && cfg.Proxy.URL != "" {
-		parts = append(parts, "--proxy", cfg.Proxy.URL)
+		parts = append(parts, "--proxy", stripURLCredentials(cfg.Proxy.URL))
 	}
 	// Note: Token and proxy credentials are intentionally omitted for security
 

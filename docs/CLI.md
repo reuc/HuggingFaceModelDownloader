@@ -11,6 +11,7 @@ Complete command-line reference for `hfdownloader`.
 - [Global Flags](#global-flags)
 - [Commands](#commands)
   - [download](#download)
+  - [resume](#resume)
   - [serve](#serve)
   - [analyze](#analyze)
   - [list](#list)
@@ -57,6 +58,9 @@ hfdownloader download facebook/flores --dataset
 
 # Analyze before downloading
 hfdownloader analyze owner/model
+
+# Continue a download that failed or was interrupted
+hfdownloader resume
 
 # Start web UI
 hfdownloader serve
@@ -159,8 +163,9 @@ The `download` subcommand is required: `hfdownloader owner/name` fails with
 
 **Verification.** Every file whose SHA256 is known in advance (all LFS files,
 which includes every multipart download) is always SHA256-verified, whatever
-`--verify` says — so `--verify none` only skips checks for small non-LFS files.
-For those files, `size` checks the byte count, `etag`/`sha256` fetch the
+`--verify` says, and a non-LFS file is always checked against the git blob id
+the Hub lists for it — so `--verify none` only skips checks for files with
+neither. For those files, `size` checks the byte count, `etag`/`sha256` fetch the
 server's hash and compare it (falling back to a size check if the server
 exposes none), and `none` skips verification.
 
@@ -245,6 +250,96 @@ hfdownloader download owner/repo --proxy socks5://localhost:1080 \
 hfdownloader download owner/repo --local-dir ./my-model
 # Equivalent v2.x form (still supported)
 hfdownloader download owner/repo --legacy -o ./my-model
+```
+
+---
+
+### resume
+
+Continue a download that failed or was interrupted, with the same repo,
+revision, file selection, destination and settings as the original command.
+Completed files are skipped; partially downloaded ones continue from where
+they stopped (single-stream files and every part of a multipart file).
+
+```bash
+hfdownloader resume [ID|REPO] [flags]
+```
+
+Every download started from the CLI (`download`, or `analyze -i`) is recorded
+while it runs. When it completes the record is deleted; when it fails, is
+stopped with Ctrl+C, or its process dies (killed, crashed, power loss) the
+record stays, and the CLI prints how to continue:
+
+```
+error: download model-00003-of-00004.safetensors: unexpected EOF
+Partially downloaded files were kept. To continue, run:
+  hfdownloader resume 4cadd8f4a9cf
+```
+
+With no argument, `resume` continues the only failed or interrupted download.
+When there are several, pass an ID (or a unique prefix of at least 4
+characters), the repo (`owner/name` or `owner/name@revision`), or `--all`.
+A download that is still running in another process is never resumed
+alongside it, since two writers would corrupt the partial files.
+
+Running the original `download` command again also continues the download
+(it is the same download, with the same ID) and clears the record when it
+completes.
+
+#### Flags
+
+| Flag | Short | Type | Default | Description |
+|------|-------|------|---------|-------------|
+| `--list` | | bool | `false` | List failed and interrupted downloads (with `--json`: as a JSON array) |
+| `--all` | | bool | `false` | Resume every failed or interrupted download (matching the ID or repo, if given), one after another |
+| `--forget` | | bool | `false` | Remove the selected download(s) from the list instead; partial files stay in the cache and a later download of the same files continues from them |
+| `--connections` | `-c` | int | as recorded | Per-file connections for this and later attempts |
+| `--max-active` | | int | as recorded | Max files downloading at once |
+| `--retries` | | int | as recorded | Retry attempts per request/part |
+| `--backoff-initial`, `--backoff-max` | | string | as recorded | Retry delays |
+| `--stall-timeout` | | string | as recorded | Retry a transfer that receives no data for this long |
+| `--proxy`, `--proxy-user`, `--proxy-pass`, `--no-env-proxy` | `-x` | | as recorded, else config | Proxy settings |
+
+The global `--token`, `--json` and `--quiet` flags apply as for `download`.
+
+#### What is recorded
+
+Records live in `~/.config/hfdownloader/downloads/<id>.json`, one per
+download. They hold the repo, revision, filters, excludes, shards, the
+destination (as absolute paths, so a resume from another directory writes to
+the same place) and the resolved settings. They never hold the access token
+or proxy credentials: a resume reads the token from `--token`, `HF_TOKEN` or
+the config file, and proxy credentials from the config file or
+`--proxy-user`/`--proxy-pass`.
+
+A resume downloads the recorded revision as it is now. If a branch moved since
+the failed attempt, unchanged files still continue from their partial data and
+changed files download in their new version.
+
+#### Examples
+
+```bash
+# Show what can be resumed
+hfdownloader resume --list
+# ID            STATUS       PROGRESS                          LAST ACTIVE       DOWNLOAD
+# 4cadd8f4a9cf  interrupted  15/16 files, 58.6 MB of 554.3 MB  2026-11-07 18:10  openai-community/gpt2
+#                 error: download model.safetensors: context canceled
+
+# Resume the only failed/interrupted download
+hfdownloader resume
+
+# Resume one by ID prefix, or by repo
+hfdownloader resume 4cad
+hfdownloader resume openai-community/gpt2
+
+# Flaky connection: retry harder and use fewer connections this time
+hfdownloader resume 4cad --retries 20 -c 4
+
+# Resume everything, one after another (e.g. after a reboot)
+hfdownloader resume --all
+
+# Drop a download from the list
+hfdownloader resume --forget 4cad
 ```
 
 ---
@@ -1115,8 +1210,8 @@ hfdownloader download owner/repo -F safetensors -E ".md,fp16"
 # 4. High-speed download
 hfdownloader download owner/repo -c 16 --max-active 8
 
-# 5. Resume interrupted download
-hfdownloader download owner/repo  # Automatically resumes
+# 5. Resume a failed or interrupted download
+hfdownloader resume               # or run the same download command again
 ```
 
 ### Server Workflows
@@ -1175,7 +1270,9 @@ hfdownloader download owner/repo -q
 | 0 | Success (also: bare `hfdownloader` printing help, `serve` shut down with Ctrl+C) |
 | 1 | Any error — including invalid arguments/flags, unknown commands, failed downloads, and a download interrupted with Ctrl+C |
 
-The error is printed to stderr as `error: <message>`.
+The error is printed to stderr as `error: <message>`. When a download that
+failed or was interrupted can be continued, it is followed by the
+`hfdownloader resume <id>` command to run.
 
 ---
 
@@ -1186,7 +1283,8 @@ The error is printed to stderr as `error: <message>`.
   and exits 0.
 - `SIGTERM`: Same as SIGINT
 
-Interrupted downloads can be resumed by running the same command again.
+Interrupted downloads can be resumed with [`hfdownloader resume`](#resume), or
+by running the same command again.
 
 ---
 
