@@ -450,7 +450,7 @@ curl -X POST http://localhost:8080/api/jobs/a1b2c3d4e5f6/resume
 ```
 queued ─────► running ─────► completed
                 │
-                ├─────► failed
+                ├─────► failed ─────► queued ─► running ─► ...   (retry)
                 │
                 ├─────► cancelled
                 │
@@ -1062,6 +1062,23 @@ Response `200 OK`: `{"success": true, "message": "Job dismissed"}`
 
 ```bash
 curl -X POST http://localhost:8080/api/jobs/a1b2c3d4e5f6/dismiss
+```
+
+#### POST /api/jobs/{id}/retry
+
+Put a `failed` job back in the download queue (**Redownload** on the web UI's
+Failed Jobs page). The job keeps its id and selection; `error` and progress are
+cleared and its status becomes `queued`. When it runs, files already in the
+cache are skipped and partially downloaded ones resume.
+
+Response `200 OK`: the re-queued job (same shape as `GET /api/jobs/{id}`).
+
+Errors: `404` for an unknown id; `409` if the job isn't `failed`, or if the
+same download (repo, revision, filters, excludes) has since been started again
+as another job that is queued or running (`details` names that job).
+
+```bash
+curl -X POST http://localhost:8080/api/jobs/a1b2c3d4e5f6/retry
 ```
 
 ---

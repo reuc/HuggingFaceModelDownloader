@@ -55,6 +55,13 @@
           <span>Active Jobs</span>
           <span class="nav-badge" id="jobsBadge" style="display:none">0</span>
         </a>
+        <a href="#" class="nav-item" data-page="failed">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+          </svg>
+          <span>Failed Jobs</span>
+          <span class="nav-badge" id="failedBadge" style="display:none">0</span>
+        </a>
         <a href="#" class="nav-item" data-page="cache">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
@@ -321,6 +328,17 @@
             <p>Start a download from the Download page to see progress here.</p>
           </div>
         </div>
+      </section>
+
+      <section class="page" id="page-failed">
+        <header class="page-header">
+          <div>
+            <h1>Failed Jobs</h1>
+            <p class="page-subtitle">Downloads that stopped with an error. Redownload moves a job back to Active Jobs and resumes from what is already on disk.</p>
+          </div>
+        </header>
+
+        <div id="failedJobsList" class="jobs-list"></div>
       </section>
 
       <!-- Cache Page -->

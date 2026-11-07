@@ -281,26 +281,6 @@ func (m *JobManager) CreateJob(req DownloadRequest) (*Job, bool, error) {
 		outputDir = cfg.LocalDir
 	}
 
-	// Check for existing active job with same repo+revision+type.
-	// Returning a clone prevents the caller's JSON encoder from racing
-	// against runJob's in-place mutations of the live job.
-	m.mu.Lock()
-	for _, existing := range m.jobs {
-		// Same selection only: a request for the same repo with different
-		// filters is a different download, not a duplicate.
-		if existing.Repo == req.Repo &&
-			existing.Revision == revision &&
-			existing.IsDataset == req.Dataset &&
-			sameStrings(existing.Filters, req.Filters) &&
-			sameStrings(existing.Excludes, req.Excludes) &&
-			existing.ExactMatch == req.ExactMatch &&
-			(existing.Status == JobStatusQueued || existing.Status == JobStatusRunning) {
-			snapshot := m.cloneJobLocked(existing)
-			m.mu.Unlock()
-			return snapshot, true, nil
-		}
-	}
-
 	job := &Job{
 		ID:         generateID(),
 		Repo:       req.Repo,
@@ -314,6 +294,16 @@ func (m *JobManager) CreateJob(req DownloadRequest) (*Job, bool, error) {
 		Status:     JobStatusQueued,
 		CreatedAt:  time.Now(),
 		Progress:   JobProgress{},
+	}
+
+	// Return the existing job if the same download is already queued or
+	// running. Returning a clone prevents the caller's JSON encoder from
+	// racing against runJob's in-place mutations of the live job.
+	m.mu.Lock()
+	if existing := m.activeDuplicateLocked(job); existing != nil {
+		snapshot := m.cloneJobLocked(existing)
+		m.mu.Unlock()
+		return snapshot, true, nil
 	}
 
 	m.jobs[job.ID] = job
@@ -440,6 +430,86 @@ func (m *JobManager) ResumeJob(id string) bool {
 	m.notifyListeners(snapshot)
 
 	return true
+}
+
+// sameDownload reports whether two jobs download the same selection: repo,
+// revision, type, filters, excludes and match mode. A job for the same repo
+// with different filters is a different download, not a duplicate.
+func sameDownload(a, b *Job) bool {
+	return a.Repo == b.Repo &&
+		a.Revision == b.Revision &&
+		a.IsDataset == b.IsDataset &&
+		sameStrings(a.Filters, b.Filters) &&
+		sameStrings(a.Excludes, b.Excludes) &&
+		a.ExactMatch == b.ExactMatch
+}
+
+// activeDuplicateLocked returns a queued or running job, other than job
+// itself, that downloads the same selection as job; nil if there is none.
+// Must hold m.mu (any lock).
+func (m *JobManager) activeDuplicateLocked(job *Job) *Job {
+	for _, other := range m.jobs {
+		if other != job && other.ID != job.ID && sameDownload(other, job) &&
+			(other.Status == JobStatusQueued || other.Status == JobStatusRunning) {
+			return other
+		}
+	}
+	return nil
+}
+
+// RetryJobResult distinguishes the outcomes of a retry attempt so the HTTP
+// layer can map them to status codes.
+type RetryJobResult int
+
+const (
+	// RetryJobOK means the failed job is back in the download queue.
+	RetryJobOK RetryJobResult = iota
+	// RetryJobNotFound means no job with that ID exists.
+	RetryJobNotFound
+	// RetryJobNotFailed means the job isn't in the failed state.
+	RetryJobNotFailed
+	// RetryJobDuplicate means the same download has since been started again
+	// as another job, which is queued or running.
+	RetryJobDuplicate
+)
+
+// RetryJob puts a failed job back in the download queue ("Redownload" in the
+// web UI). The job keeps its ID and selection; its error and progress are
+// cleared. Data already on disk is reused when it runs: finished files are
+// skipped and partially downloaded ones resume from where they stopped.
+func (m *JobManager) RetryJob(id string) (RetryJobResult, *Job) {
+	m.mu.Lock()
+	job, ok := m.jobs[id]
+	if !ok {
+		m.mu.Unlock()
+		return RetryJobNotFound, nil
+	}
+	if job.Status != JobStatusFailed {
+		snapshot := m.cloneJobLocked(job)
+		m.mu.Unlock()
+		return RetryJobNotFailed, snapshot
+	}
+	if existing := m.activeDuplicateLocked(job); existing != nil {
+		snapshot := m.cloneJobLocked(existing)
+		m.mu.Unlock()
+		return RetryJobDuplicate, snapshot
+	}
+
+	job.Status = JobStatusQueued
+	job.Error = ""
+	job.StartedAt = nil
+	job.EndedAt = nil
+	// The downloader re-plans and reports every file again when it runs.
+	job.Progress = JobProgress{}
+	job.Files = nil
+	m.enqueueLocked(job.ID)
+	m.scheduleNextLocked()
+	snapshot := m.cloneJobLocked(job)
+	m.mu.Unlock()
+	m.saveJobs()
+
+	m.notifyListeners(snapshot)
+	return RetryJobOK, snapshot
 }
 
 // DeleteJob removes a job from the list.
