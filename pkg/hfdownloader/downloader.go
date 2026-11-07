@@ -848,20 +848,56 @@ func globEscape(s string) string {
 	return r.Replace(s)
 }
 
+// headWithRetry sends the HEAD that starts a multipart download, retrying
+// network errors and retryable statuses with the same budget and backoff as
+// the part requests. Without it, one dropped connection or dial timeout at
+// the start of a file failed it outright while every request after the HEAD
+// would have been retried.
+func headWithRetry(ctx context.Context, httpc *http.Client, token string, cfg Settings, it PlanItem, emit func(ProgressEvent)) (*http.Response, error) {
+	retry := newRetry(cfg)
+	var lastErr error
+	for attempt := 0; attempt <= cfg.Retries; attempt++ {
+		var serverWait time.Duration
+		req, _ := http.NewRequestWithContext(ctx, "HEAD", it.URL, nil)
+		addAuth(req, token)
+		resp, err := httpc.Do(req)
+		if err != nil {
+			lastErr = err
+		} else {
+			resp.Body.Close()
+			if resp.StatusCode < 400 {
+				return resp, nil
+			}
+			apiErr := downloadStatusError(resp, it)
+			if !apiErr.IsRetryable() {
+				return nil, apiErr // 401/403/404 won't change on retry
+			}
+			serverWait = retryAfter(resp)
+			lastErr = apiErr
+		}
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		if attempt < cfg.Retries {
+			emit(ProgressEvent{Event: "retry", Path: it.RelativePath, Attempt: attempt + 1, Message: lastErr.Error()})
+			d := retry.Next()
+			if serverWait > d {
+				d = serverWait
+			}
+			if !sleepCtx(ctx, d) {
+				return nil, ctx.Err()
+			}
+		}
+	}
+	return nil, lastErr
+}
+
 // downloadMultipart downloads a file using multiple parallel range requests.
 func downloadMultipart(ctx context.Context, httpc *http.Client, token string, job Job, cfg Settings, it PlanItem, dst string, emit func(ProgressEvent)) error {
-	// HEAD to resolve size
-	req, _ := http.NewRequestWithContext(ctx, "HEAD", it.URL, nil)
-	addAuth(req, token)
-	resp, err := httpc.Do(req)
+	// HEAD to check access and resolve the size
+	resp, err := headWithRetry(ctx, httpc, token, cfg, it, emit)
 	if err != nil {
 		return err
-	}
-	resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		if apiErr := downloadStatusError(resp, it); !apiErr.IsRetryable() {
-			return apiErr
-		}
 	}
 
 	if it.Size == 0 {
