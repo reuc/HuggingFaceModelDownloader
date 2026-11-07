@@ -2,6 +2,7 @@
 /hfdownloader
 /hfdownloader.exe
 /output/
+/findings/
 
 # Downloaded models/data
 /Models/
