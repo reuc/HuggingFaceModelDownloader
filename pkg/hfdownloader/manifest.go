@@ -177,7 +177,7 @@ func (m *DownloadManifest) Write(friendlyPath string) (string, error) {
 		werr = os.Rename(tmp.Name(), manifestPath)
 	}
 	if werr != nil {
-		os.Remove(tmp.Name())
+		_ = os.Remove(tmp.Name())
 		return "", fmt.Errorf("write manifest: %w", werr)
 	}
 

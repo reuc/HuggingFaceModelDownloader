@@ -19,7 +19,7 @@ import (
 // gitBlobOID is the git blob id the Hub reports as a file's "oid".
 func gitBlobOID(data []byte) string {
 	h := sha1.New()
-	fmt.Fprintf(h, "blob %d\x00", len(data))
+	_, _ = fmt.Fprintf(h, "blob %d\x00", len(data)) // hash.Hash writes never fail
 	h.Write(data)
 	return hex.EncodeToString(h.Sum(nil))
 }

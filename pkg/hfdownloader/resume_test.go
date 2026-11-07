@@ -115,7 +115,7 @@ func TestDownloadSingle_CompletePartialIsFinalized(t *testing.T) {
 	var requestCount int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestCount++
-		w.Write(full)
+		_, _ = w.Write(full)
 	}))
 	defer srv.Close()
 
@@ -161,7 +161,7 @@ func TestDownloadSingle_ServerIgnoresRangeReturnsFull(t *testing.T) {
 		// Intentionally ignore Range header and return 200 with full body.
 		w.Header().Set("Content-Length", strconv.Itoa(len(full)))
 		w.WriteHeader(http.StatusOK)
-		w.Write(full)
+		_, _ = w.Write(full)
 	}))
 	defer srv.Close()
 

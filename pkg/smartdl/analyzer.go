@@ -393,7 +393,7 @@ func (a *Analyzer) fetchRefs(ctx context.Context, repo string, isDataset bool) (
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 200 {
 		return nil, fmt.Errorf("fetch refs: %s", resp.Status)
@@ -629,7 +629,7 @@ func (a *Analyzer) fetchFile(ctx context.Context, repo string, isDataset bool, r
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 200 {
 		return nil, fmt.Errorf("fetch %s: %s", path, resp.Status)
@@ -671,7 +671,7 @@ func (a *Analyzer) fetchJSONHead(ctx context.Context, repo string, isDataset boo
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
 		return nil, fmt.Errorf("fetch %s: %s", path, resp.Status)
 	}
@@ -734,7 +734,7 @@ func (a *Analyzer) analyzeTypeSpecific(info *RepoInfo) {
 			return
 		}
 		// For transformers, first try to detect specialized types from metadata
-		specializedType := detectSpecializedType(info.Files, info.Metadata)
+		specializedType := detectSpecializedType(info.Metadata)
 		if specializedType != "" {
 			info.Type = specializedType
 			info.TypeDescription = info.Type.Description()
@@ -751,7 +751,7 @@ func (a *Analyzer) analyzeTypeSpecific(info *RepoInfo) {
 			return
 		}
 		// For generic, try to detect specialized types from metadata
-		specializedType := detectSpecializedType(info.Files, info.Metadata)
+		specializedType := detectSpecializedType(info.Metadata)
 		if specializedType != "" {
 			info.Type = specializedType
 			info.TypeDescription = info.Type.Description()

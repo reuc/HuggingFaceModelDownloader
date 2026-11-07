@@ -9,14 +9,13 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/reuc/HuggingFaceModelDownloader/internal/testutil"
 )
 
 func TestDefaultCacheDir(t *testing.T) {
 	t.Run("with HF_HOME set", func(t *testing.T) {
-		origHFHome := os.Getenv("HF_HOME")
-		defer os.Setenv("HF_HOME", origHFHome)
-
-		os.Setenv("HF_HOME", "/custom/hf/path")
+		t.Setenv("HF_HOME", "/custom/hf/path")
 		dir := DefaultCacheDir()
 		if dir != "/custom/hf/path" {
 			t.Errorf("DefaultCacheDir() = %q, want /custom/hf/path", dir)
@@ -24,10 +23,7 @@ func TestDefaultCacheDir(t *testing.T) {
 	})
 
 	t.Run("without HF_HOME", func(t *testing.T) {
-		origHFHome := os.Getenv("HF_HOME")
-		defer os.Setenv("HF_HOME", origHFHome)
-
-		os.Unsetenv("HF_HOME")
+		testutil.Unsetenv(t, "HF_HOME")
 		dir := DefaultCacheDir()
 		if !strings.Contains(dir, ".cache") || !strings.Contains(dir, "huggingface") {
 			t.Errorf("DefaultCacheDir() = %q, want to contain .cache/huggingface", dir)
@@ -67,9 +63,7 @@ func TestNewHFCache(t *testing.T) {
 
 func TestHFCache_Directories(t *testing.T) {
 	t.Run("HubDir default", func(t *testing.T) {
-		origHFHubCache := os.Getenv("HF_HUB_CACHE")
-		defer os.Setenv("HF_HUB_CACHE", origHFHubCache)
-		os.Unsetenv("HF_HUB_CACHE")
+		testutil.Unsetenv(t, "HF_HUB_CACHE")
 
 		cache := NewHFCache("/root", 0)
 		if cache.HubDir() != "/root/hub" {
@@ -78,10 +72,7 @@ func TestHFCache_Directories(t *testing.T) {
 	})
 
 	t.Run("HubDir with HF_HUB_CACHE", func(t *testing.T) {
-		origHFHubCache := os.Getenv("HF_HUB_CACHE")
-		defer os.Setenv("HF_HUB_CACHE", origHFHubCache)
-
-		os.Setenv("HF_HUB_CACHE", "/custom/hub")
+		t.Setenv("HF_HUB_CACHE", "/custom/hub")
 		cache := NewHFCache("/root", 0)
 		if cache.HubDir() != "/custom/hub" {
 			t.Errorf("HubDir() = %q, want /custom/hub", cache.HubDir())
@@ -151,9 +142,7 @@ func TestHFCache_Repo(t *testing.T) {
 }
 
 func TestRepoDir_Paths(t *testing.T) {
-	origHFHubCache := os.Getenv("HF_HUB_CACHE")
-	defer os.Setenv("HF_HUB_CACHE", origHFHubCache)
-	os.Unsetenv("HF_HUB_CACHE")
+	testutil.Unsetenv(t, "HF_HUB_CACHE")
 
 	cache := NewHFCache("/root", 0)
 
@@ -261,7 +250,9 @@ func TestRepoDir_CheckBlob(t *testing.T) {
 	tmpDir := t.TempDir()
 	cache := NewHFCache(tmpDir, 100*time.Millisecond) // Short stale timeout for testing
 	repo, _ := cache.Repo("owner/name", RepoTypeModel)
-	repo.EnsureDirs()
+	if err := repo.EnsureDirs(); err != nil {
+		t.Fatal(err)
+	}
 
 	sha := strings.Repeat("ab", 32) // blob names must be hex SHA256
 
@@ -284,7 +275,7 @@ func TestRepoDir_CheckBlob(t *testing.T) {
 		if err := os.WriteFile(blobPath, []byte("data"), 0644); err != nil {
 			t.Fatal(err)
 		}
-		defer os.Remove(blobPath)
+		defer func() { _ = os.Remove(blobPath) }()
 
 		status, meta, err := repo.CheckBlob(sha)
 		if err != nil {
@@ -305,7 +296,7 @@ func TestRepoDir_CheckBlob(t *testing.T) {
 		if err := os.WriteFile(incompletePath, []byte("partial"), 0644); err != nil {
 			t.Fatal(err)
 		}
-		defer os.Remove(incompletePath)
+		defer func() { _ = os.Remove(incompletePath) }()
 
 		status, _, err := repo.CheckBlob(sha2)
 		if err != nil {
@@ -321,7 +312,9 @@ func TestRepoDir_WriteAndReadRef(t *testing.T) {
 	tmpDir := t.TempDir()
 	cache := NewHFCache(tmpDir, 0)
 	repo, _ := cache.Repo("owner/name", RepoTypeModel)
-	repo.EnsureDirs()
+	if err := repo.EnsureDirs(); err != nil {
+		t.Fatal(err)
+	}
 
 	t.Run("write and read ref", func(t *testing.T) {
 		commit := "abc123def456"
@@ -353,7 +346,9 @@ func TestRepoDir_ListSnapshots(t *testing.T) {
 	tmpDir := t.TempDir()
 	cache := NewHFCache(tmpDir, 0)
 	repo, _ := cache.Repo("owner/name", RepoTypeModel)
-	repo.EnsureDirs()
+	if err := repo.EnsureDirs(); err != nil {
+		t.Fatal(err)
+	}
 
 	t.Run("empty snapshots", func(t *testing.T) {
 		snapshots, err := repo.ListSnapshots()
@@ -367,8 +362,8 @@ func TestRepoDir_ListSnapshots(t *testing.T) {
 
 	t.Run("with snapshots", func(t *testing.T) {
 		// Create some snapshot directories
-		os.MkdirAll(repo.SnapshotDir("commit1"), 0755)
-		os.MkdirAll(repo.SnapshotDir("commit2"), 0755)
+		testutil.MkdirAll(t, repo.SnapshotDir("commit1"), 0755)
+		testutil.MkdirAll(t, repo.SnapshotDir("commit2"), 0755)
 
 		snapshots, err := repo.ListSnapshots()
 		if err != nil {

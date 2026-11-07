@@ -6,6 +6,7 @@ package hfdownloader
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -76,7 +77,7 @@ func (c *HFCache) Sync(opts SyncOptions) (*SyncResult, error) {
 		result.SnapshotEntriesRepaired += repaired
 
 		// Sync this repo's friendly view
-		created, updated, err := c.syncRepoFriendlyView(repoDir, opts)
+		created, updated, err := c.syncRepoFriendlyView(repoDir)
 		if err != nil {
 			result.Errors = append(result.Errors, fmt.Errorf("sync %s: %w", entry.Name(), err))
 			continue
@@ -88,7 +89,7 @@ func (c *HFCache) Sync(opts SyncOptions) (*SyncResult, error) {
 
 	// Clean orphaned symlinks if requested
 	if opts.Clean {
-		removed, err := c.cleanOrphanedSymlinks(opts)
+		removed, err := c.cleanOrphanedSymlinks()
 		if err != nil {
 			result.Errors = append(result.Errors, fmt.Errorf("clean orphans: %w", err))
 		}
@@ -125,7 +126,7 @@ func parseRepoDirName(dirName string) (RepoType, string, string, bool) {
 
 // syncRepoFriendlyView syncs a single repo's friendly view.
 // Returns (created, updated, error).
-func (c *HFCache) syncRepoFriendlyView(repoDir *RepoDir, opts SyncOptions) (int, int, error) {
+func (c *HFCache) syncRepoFriendlyView(repoDir *RepoDir) (int, int, error) {
 	created := 0
 	updated := 0
 
@@ -198,8 +199,9 @@ func (c *HFCache) syncRepoFriendlyView(repoDir *RepoDir, opts SyncOptions) (int,
 			return nil // hardlink to the same data
 		}
 
-		// Create or update symlink
-		if err := repoDir.CreateFriendlySymlink(commit, relPath, ""); err != nil {
+		// Create or update symlink. CreateFriendlySymlink takes a repo path
+		// (forward slashes; it rejects backslashes), not an OS path.
+		if err := repoDir.CreateFriendlySymlink(commit, filepath.ToSlash(relPath), ""); err != nil {
 			return fmt.Errorf("create symlink for %s: %w", relPath, err)
 		}
 
@@ -220,7 +222,7 @@ func (c *HFCache) syncRepoFriendlyView(repoDir *RepoDir, opts SyncOptions) (int,
 }
 
 // cleanOrphanedSymlinks removes symlinks in friendly view that point to non-existent files.
-func (c *HFCache) cleanOrphanedSymlinks(opts SyncOptions) (int, error) {
+func (c *HFCache) cleanOrphanedSymlinks() (int, error) {
 	removed := 0
 
 	// Clean models/
@@ -291,17 +293,23 @@ func cleanOrphansInDir(dir string) (int, error) {
 	return removed, nil
 }
 
-// cleanEmptyDirs removes empty directories from bottom up.
+// cleanEmptyDirs removes empty directories from bottom up, so a directory
+// left empty by removing its empty subdirectories goes too. It is best
+// effort: unreadable directories are skipped.
 func cleanEmptyDirs(dir string) {
-	filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
-		if err != nil || !info.IsDir() {
-			return nil
+	var dirs []string
+	// The callback never returns an error, so neither does WalkDir.
+	_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err == nil && d.IsDir() {
+			dirs = append(dirs, path)
 		}
-
-		// Try to remove (will fail if not empty)
-		os.Remove(path)
 		return nil
 	})
+	// WalkDir lists a directory before its contents: go in reverse so
+	// children are removed before their parents.
+	for i := len(dirs) - 1; i >= 0; i-- {
+		_ = os.Remove(dirs[i]) // fails, as intended, unless the directory is empty
+	}
 }
 
 // ListRepos returns all repositories in the cache.

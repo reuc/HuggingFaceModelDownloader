@@ -34,7 +34,8 @@ func TestJobManager_CreateJob(t *testing.T) {
 			mgr.CancelJob(j.ID)
 		}
 		mgr.WaitAll(5 * time.Second)
-		os.RemoveAll(testCacheDir)
+		// Best effort: t.TempDir's own cleanup reports anything left behind.
+		_ = os.RemoveAll(testCacheDir)
 	})
 
 	t.Run("creates model job with HF cache output", func(t *testing.T) {
@@ -94,7 +95,7 @@ func TestJobManager_Deduplication(t *testing.T) {
 	cacheDir := t.TempDir()
 	t.Cleanup(func() {
 		time.Sleep(100 * time.Millisecond)
-		os.RemoveAll(cacheDir)
+		_ = os.RemoveAll(cacheDir)
 	})
 
 	cfg := Config{
@@ -130,7 +131,7 @@ func TestJobManager_DifferentRevisionsNotDeduplicated(t *testing.T) {
 	cacheDir := t.TempDir()
 	t.Cleanup(func() {
 		time.Sleep(100 * time.Millisecond)
-		os.RemoveAll(cacheDir)
+		_ = os.RemoveAll(cacheDir)
 	})
 
 	cfg := Config{
@@ -163,7 +164,7 @@ func TestJobManager_ModelVsDatasetNotDeduplicated(t *testing.T) {
 	cacheDir := t.TempDir()
 	t.Cleanup(func() {
 		time.Sleep(100 * time.Millisecond) // Let goroutines finish
-		os.RemoveAll(cacheDir)
+		_ = os.RemoveAll(cacheDir)
 	})
 
 	cfg := Config{
@@ -196,7 +197,7 @@ func TestJobManager_GetJob(t *testing.T) {
 	cacheDir := t.TempDir()
 	t.Cleanup(func() {
 		time.Sleep(100 * time.Millisecond)
-		os.RemoveAll(cacheDir)
+		_ = os.RemoveAll(cacheDir)
 	})
 
 	cfg := Config{CacheDir: cacheDir}
@@ -228,7 +229,7 @@ func TestJobManager_ListJobs(t *testing.T) {
 	cacheDir := t.TempDir()
 	t.Cleanup(func() {
 		time.Sleep(100 * time.Millisecond) // Let goroutines finish
-		os.RemoveAll(cacheDir)
+		_ = os.RemoveAll(cacheDir)
 	})
 
 	cfg := Config{CacheDir: cacheDir}
@@ -237,9 +238,11 @@ func TestJobManager_ListJobs(t *testing.T) {
 	mgr := NewJobManager(cfg, hub)
 
 	// Create multiple jobs with unique repos
-	mgr.CreateJob(DownloadRequest{Repo: "list/test1"})
-	mgr.CreateJob(DownloadRequest{Repo: "list/test2"})
-	mgr.CreateJob(DownloadRequest{Repo: "list/test3"})
+	for _, repo := range []string{"list/test1", "list/test2", "list/test3"} {
+		if _, _, err := mgr.CreateJob(DownloadRequest{Repo: repo}); err != nil {
+			t.Fatalf("CreateJob(%s): %v", repo, err)
+		}
+	}
 
 	jobs := mgr.ListJobs()
 	if len(jobs) < 3 {
@@ -251,7 +254,7 @@ func TestJobManager_CancelJob(t *testing.T) {
 	cacheDir := t.TempDir()
 	t.Cleanup(func() {
 		time.Sleep(100 * time.Millisecond)
-		os.RemoveAll(cacheDir)
+		_ = os.RemoveAll(cacheDir)
 	})
 
 	cfg := Config{CacheDir: cacheDir}

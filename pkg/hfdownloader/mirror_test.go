@@ -51,8 +51,11 @@ func TestCopyAndVerifyRepoCache(t *testing.T) {
 	// Symlink preserved as a symlink pointing at the same relative target.
 	linkPath := filepath.Join(dstRepo, "snapshots", "commit1", "model.bin")
 	fi, err := os.Lstat(linkPath)
-	if err != nil || fi.Mode()&os.ModeSymlink == 0 {
-		t.Fatalf("snapshot entry should be a symlink (mode=%v, err=%v)", fi.Mode(), err)
+	if err != nil {
+		t.Fatalf("snapshot entry: %v", err)
+	}
+	if fi.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("snapshot entry should be a symlink (mode=%v)", fi.Mode())
 	}
 	if link, _ := os.Readlink(linkPath); link != linkTarget {
 		t.Errorf("symlink target = %q, want %q", link, linkTarget)

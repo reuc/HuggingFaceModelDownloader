@@ -42,7 +42,7 @@ func TestAnalyzeLoRA(t *testing.T) {
 				"base_model_name_or_path": "meta-llama/Llama-2-7b-hf",
 				"r":                       float64(16),
 				"lora_alpha":              float64(32),
-				"lora_dropout":            float64(0.05),
+				"lora_dropout":            0.05,
 				"target_modules":          []interface{}{"q_proj", "v_proj", "k_proj", "o_proj"},
 				"bias":                    "none",
 				"task_type":               "CAUSAL_LM",

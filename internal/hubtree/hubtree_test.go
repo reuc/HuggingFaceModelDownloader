@@ -82,7 +82,7 @@ func (f *fakeTree) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		q.Set("cursor", strconv.Itoa(end))
 		w.Header().Set("Link", fmt.Sprintf(`<%s?%s>; rel="next"`, r.URL.Path, q.Encode()))
 	}
-	json.NewEncoder(w).Encode(all[start:end])
+	_ = json.NewEncoder(w).Encode(all[start:end])
 }
 
 func walkAll(t *testing.T, srv *httptest.Server, o Options) ([]string, error) {
@@ -187,7 +187,7 @@ func TestWalk_RetriesRateLimit(t *testing.T) {
 			w.WriteHeader(http.StatusTooManyRequests)
 			return
 		}
-		json.NewEncoder(w).Encode([]node{{"file", "a.txt"}})
+		_ = json.NewEncoder(w).Encode([]node{{"file", "a.txt"}})
 	}))
 	defer srv.Close()
 

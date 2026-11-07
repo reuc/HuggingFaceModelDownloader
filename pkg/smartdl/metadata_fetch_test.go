@@ -22,7 +22,7 @@ func TestFetchFile_ReadsWholeFile(t *testing.T) {
 	body, _ := json.Marshal(big)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		for i := 0; i < len(body); i += 1000 { // many small writes
-			w.Write(body[i:min(i+1000, len(body))])
+			_, _ = w.Write(body[i:min(i+1000, len(body))])
 			w.(http.Flusher).Flush()
 		}
 	}))

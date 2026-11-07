@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/reuc/HuggingFaceModelDownloader/internal/testutil"
 )
 
 // A repo stored flat (serve --flatten) has no hub/ entry, only real files and
@@ -23,9 +25,9 @@ func TestCacheRoutes_FlatRepo(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(flat, "sub"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	os.WriteFile(filepath.Join(flat, "config.json"), []byte(`{"a":1}`), 0o644)
-	os.WriteFile(filepath.Join(flat, "sub", "model.bin"), make([]byte, 1000), 0o644)
-	os.WriteFile(filepath.Join(flat, "hfd.yaml"), []byte("version: \"1.0\"\ntype: model\nrepo: o/r\nbranch: main\ncommit: 1111111111111111111111111111111111111111\nstorage: flat\ntotal_size: 1007\ntotal_files: 2\n"), 0o644)
+	testutil.WriteFile(t, filepath.Join(flat, "config.json"), []byte(`{"a":1}`), 0o644)
+	testutil.WriteFile(t, filepath.Join(flat, "sub", "model.bin"), make([]byte, 1000), 0o644)
+	testutil.WriteFile(t, filepath.Join(flat, "hfd.yaml"), []byte("version: \"1.0\"\ntype: model\nrepo: o/r\nbranch: main\ncommit: 1111111111111111111111111111111111111111\nstorage: flat\ntotal_size: 1007\ntotal_files: 2\n"), 0o644)
 
 	srv := New(Config{CacheDir: cacheDir})
 
@@ -71,18 +73,18 @@ func makeHubRepo(t *testing.T, cacheDir string, commits ...string) string {
 	t.Helper()
 	repo := filepath.Join(cacheDir, "hub", "models--o--r")
 	blobs := filepath.Join(repo, "blobs")
-	os.MkdirAll(blobs, 0o755)
+	testutil.MkdirAll(t, blobs, 0o755)
 	for i, c := range commits {
 		snap := filepath.Join(repo, "snapshots", c)
-		os.MkdirAll(snap, 0o755)
+		testutil.MkdirAll(t, snap, 0o755)
 		blob := fmt.Sprintf("%064d", i+1)
-		os.WriteFile(filepath.Join(blobs, blob), []byte(c), 0o644)
+		testutil.WriteFile(t, filepath.Join(blobs, blob), []byte(c), 0o644)
 		if err := os.Symlink(filepath.Join("..", "..", "blobs", blob), filepath.Join(snap, "config.json")); err != nil {
 			t.Fatal(err)
 		}
 	}
-	os.MkdirAll(filepath.Join(repo, "refs"), 0o755)
-	os.WriteFile(filepath.Join(repo, "refs", "main"), []byte(commits[len(commits)-1]), 0o644)
+	testutil.MkdirAll(t, filepath.Join(repo, "refs"), 0o755)
+	testutil.WriteFile(t, filepath.Join(repo, "refs", "main"), []byte(commits[len(commits)-1]), 0o644)
 	return repo
 }
 
@@ -105,7 +107,9 @@ func TestCacheFlatten(t *testing.T) {
 		Commit         string   `json:"commit"`
 		OtherRevisions []string `json:"otherRevisions"`
 	}
-	json.Unmarshal(w.Body.Bytes(), &conflict)
+	if err := json.Unmarshal(w.Body.Bytes(), &conflict); err != nil {
+		t.Fatalf("without force: %v: %d %s", err, w.Code, w.Body.String())
+	}
 	if w.Code != http.StatusConflict || conflict.Commit != c2 || len(conflict.OtherRevisions) != 1 || conflict.OtherRevisions[0] != c1 {
 		t.Fatalf("without force: %d %s", w.Code, w.Body.String())
 	}

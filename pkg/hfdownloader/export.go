@@ -141,15 +141,15 @@ func (r *RepoDir) Export(dest string, opts ExportOptions) (*ExportResult, error)
 
 // exportOne places one file with the given mode (copy by default).
 func exportOne(src, dst string, mode LinkMode) (LinkMode, error) {
-	real, err := filepath.EvalSymlinks(src)
+	resolved, err := filepath.EvalSymlinks(src)
 	if err != nil {
 		return "", err
 	}
 	switch mode {
 	case LinkSymlink:
-		return placeLink(real, dst, real, "", LinkSymlink)
+		return placeLink(resolved, dst, resolved, "", LinkSymlink)
 	default:
-		return placeLink(real, dst, "", "", mode)
+		return placeLink(resolved, dst, "", "", mode)
 	}
 }
 
@@ -311,22 +311,22 @@ func (r *RepoDir) RepairSnapshot() (int, error) {
 // filterExportEntries keeps files matching a filter plus every file that
 // isn't a weight/data file (tokenizers, configs and docs always come along).
 func filterExportEntries(entries []exportEntry, filters []string, isDataset bool) []exportEntry {
-	var fs []string
+	var patterns []string
 	for _, list := range filters {
 		for _, f := range strings.Split(list, ",") {
 			if f = strings.ToLower(strings.TrimSpace(f)); f != "" {
-				fs = append(fs, f)
+				patterns = append(patterns, f)
 			}
 		}
 	}
-	if len(fs) == 0 {
+	if len(patterns) == 0 {
 		return entries
 	}
 	var out []exportEntry
 	for _, e := range entries {
 		lower := strings.ToLower(e.rel)
 		keep := !isPayloadFile(e.rel, isDataset)
-		for _, f := range fs {
+		for _, f := range patterns {
 			if keep || filtermatch.Match(lower, f, true) {
 				keep = true
 				break
@@ -347,14 +347,23 @@ func within(path, root string) bool {
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
+// PathWithin reports whether path is root or inside it. Neither needs to
+// exist: both are made absolute, symlinks in their longest existing prefix
+// are resolved (so a link inside root can't point out of it, and on macOS
+// /tmp matches /private/tmp), and the results are compared lexically. It is
+// the check Export uses to refuse a destination inside the cache.
+func PathWithin(path, root string) bool {
+	return within(path, root)
+}
+
 // resolveExisting makes p absolute and resolves symlinks in its longest
-// existing prefix.
+// existing prefix (the path itself need not exist yet).
 func resolveExisting(p string) string {
 	p, _ = filepath.Abs(p)
 	rest := ""
 	for cur := p; ; {
-		if real, err := filepath.EvalSymlinks(cur); err == nil {
-			return filepath.Join(real, rest)
+		if resolved, err := filepath.EvalSymlinks(cur); err == nil {
+			return filepath.Join(resolved, rest)
 		}
 		parent := filepath.Dir(cur)
 		if parent == cur {

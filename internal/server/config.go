@@ -4,6 +4,7 @@
 package server
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -110,40 +111,6 @@ func LoadConfigFile() (*ConfigFile, error) {
 	return cfg, nil
 }
 
-// SaveConfigFile saves configuration to the config file.
-func SaveConfigFile(cfg *ConfigFile) error {
-	configMu.Lock()
-	defer configMu.Unlock()
-
-	path := ConfigPath()
-	if path == "" {
-		return nil
-	}
-
-	// Ensure config directory exists
-	configDir := filepath.Dir(path)
-	if err := os.MkdirAll(configDir, 0o755); err != nil {
-		return err
-	}
-
-	ext := strings.ToLower(filepath.Ext(path))
-	var data []byte
-	var err error
-
-	switch ext {
-	case ".yaml", ".yml":
-		data, err = yaml.Marshal(cfg)
-	default:
-		data, err = json.MarshalIndent(cfg, "", "  ")
-	}
-
-	if err != nil {
-		return err
-	}
-
-	return os.WriteFile(path, data, 0o644)
-}
-
 // UpdateConfigFile sets (or, for nil values, removes) the given keys in the
 // config file and keeps every other key as it is. Saving settings from the web
 // UI used to rewrite the whole file from the server's few web-managed fields,
@@ -213,45 +180,23 @@ func ApplyConfigToServer(serverCfg *Config) error {
 	}
 
 	// Only apply values that are not already set via CLI
-	if serverCfg.CacheDir == "" && fileCfg.CacheDir != "" {
-		serverCfg.CacheDir = fileCfg.CacheDir
-	}
-	if serverCfg.Token == "" && fileCfg.Token != "" {
-		serverCfg.Token = fileCfg.Token
-	}
-	if serverCfg.Concurrency == 0 && fileCfg.Connections > 0 {
-		serverCfg.Concurrency = fileCfg.Connections
-	}
-	if serverCfg.MaxActive == 0 && fileCfg.MaxActive > 0 {
-		serverCfg.MaxActive = fileCfg.MaxActive
-	}
-	if serverCfg.MultipartThreshold == "" && fileCfg.MultipartThreshold != "" {
-		serverCfg.MultipartThreshold = fileCfg.MultipartThreshold
-	}
-	if serverCfg.Verify == "" && fileCfg.Verify != "" {
-		serverCfg.Verify = fileCfg.Verify
-	}
-	if serverCfg.Retries == 0 && fileCfg.Retries > 0 {
-		serverCfg.Retries = fileCfg.Retries
-	}
-	if serverCfg.Endpoint == "" && fileCfg.Endpoint != "" {
-		serverCfg.Endpoint = fileCfg.Endpoint
-	}
-	if serverCfg.LinkMode == "" && fileCfg.LinkMode != "" {
-		serverCfg.LinkMode = fileCfg.LinkMode
-	}
+	applyIfUnset(&serverCfg.CacheDir, fileCfg.CacheDir)
+	applyIfUnset(&serverCfg.Token, fileCfg.Token)
+	applyIfUnset(&serverCfg.Concurrency, fileCfg.Connections)
+	applyIfUnset(&serverCfg.MaxActive, fileCfg.MaxActive)
+	applyIfUnset(&serverCfg.MultipartThreshold, fileCfg.MultipartThreshold)
+	applyIfUnset(&serverCfg.Verify, fileCfg.Verify)
+	applyIfUnset(&serverCfg.Retries, fileCfg.Retries)
+	applyIfUnset(&serverCfg.Endpoint, fileCfg.Endpoint)
+	applyIfUnset(&serverCfg.LinkMode, fileCfg.LinkMode)
 	if fileCfg.Flatten {
 		serverCfg.Flatten = true
 	}
 	if fileCfg.ConvertOnBoot {
 		serverCfg.ConvertOnBoot = true
 	}
-	if serverCfg.ExportDir == "" && fileCfg.ExportDir != "" {
-		serverCfg.ExportDir = fileCfg.ExportDir
-	}
-	if serverCfg.MirrorDir == "" && fileCfg.MirrorDir != "" {
-		serverCfg.MirrorDir = fileCfg.MirrorDir
-	}
+	applyIfUnset(&serverCfg.ExportDir, fileCfg.ExportDir)
+	applyIfUnset(&serverCfg.MirrorDir, fileCfg.MirrorDir)
 
 	// Apply proxy settings if not already set
 	if serverCfg.Proxy == nil && fileCfg.Proxy != nil {
@@ -266,4 +211,15 @@ func ApplyConfigToServer(serverCfg *Config) error {
 	}
 
 	return nil
+}
+
+// applyIfUnset sets *dst to the config-file value v when the CLI left *dst at
+// its zero value. v only counts when it is greater than the zero value:
+// non-empty for strings, positive for counts (a zero or negative count in the
+// file is ignored).
+func applyIfUnset[T cmp.Ordered](dst *T, v T) {
+	var zero T
+	if *dst == zero && v > zero {
+		*dst = v
+	}
 }

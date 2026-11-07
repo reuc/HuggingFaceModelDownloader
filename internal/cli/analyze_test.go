@@ -36,18 +36,27 @@ func TestNewAnalyzeCmd(t *testing.T) {
 	}
 }
 
-func captureOutput(f func()) string {
+func captureOutput(t *testing.T, f func()) string {
+	t.Helper()
 	old := os.Stdout
-	r, w, _ := os.Pipe()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = r.Close() }()
 	os.Stdout = w
 
 	f()
 
-	w.Close()
 	os.Stdout = old
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
 
 	var buf bytes.Buffer
-	io.Copy(&buf, r)
+	if _, err := io.Copy(&buf, r); err != nil {
+		t.Fatal(err)
+	}
 	return buf.String()
 }
 
@@ -62,7 +71,7 @@ func TestPrintAnalysis(t *testing.T) {
 		CLICommand:      "hfdownloader download owner/repo",
 	}
 
-	output := captureOutput(func() {
+	output := captureOutput(t, func() {
 		printAnalysis(info)
 	})
 
@@ -77,7 +86,7 @@ func TestPrintAnalysis(t *testing.T) {
 func TestPrintGGUFAnalysis(t *testing.T) {
 	t.Run("nil GGUF info", func(t *testing.T) {
 		info := &smartdl.RepoInfo{}
-		output := captureOutput(func() {
+		output := captureOutput(t, func() {
 			printGGUFAnalysis(info)
 		})
 		// Should not panic, output may be empty
@@ -91,7 +100,7 @@ func TestPrintGGUFAnalysis(t *testing.T) {
 				ParameterCount: "7B",
 			},
 		}
-		output := captureOutput(func() {
+		output := captureOutput(t, func() {
 			printGGUFAnalysis(info)
 		})
 		if !strings.Contains(output, "Mistral-7B") {
@@ -107,7 +116,7 @@ func TestPrintTransformersAnalysis(t *testing.T) {
 				{Name: "config.json", Size: 1024},
 			},
 		}
-		output := captureOutput(func() {
+		output := captureOutput(t, func() {
 			printTransformersAnalysis(info)
 		})
 		// Should not panic, may fall back to generic or be empty
@@ -132,7 +141,7 @@ func TestPrintTransformersAnalysis(t *testing.T) {
 				},
 			},
 		}
-		output := captureOutput(func() {
+		output := captureOutput(t, func() {
 			printTransformersAnalysis(info)
 		})
 		if !strings.Contains(output, "LlamaForCausalLM") {
@@ -147,7 +156,7 @@ func TestPrintTransformersAnalysis(t *testing.T) {
 func TestPrintDiffusersAnalysis(t *testing.T) {
 	t.Run("nil diffusers info", func(t *testing.T) {
 		info := &smartdl.RepoInfo{}
-		output := captureOutput(func() {
+		output := captureOutput(t, func() {
 			printDiffusersAnalysis(info)
 		})
 		_ = output // Should not panic
@@ -166,7 +175,7 @@ func TestPrintDiffusersAnalysis(t *testing.T) {
 				},
 			},
 		}
-		output := captureOutput(func() {
+		output := captureOutput(t, func() {
 			printDiffusersAnalysis(info)
 		})
 		if !strings.Contains(output, "StableDiffusionXLPipeline") {
@@ -181,7 +190,7 @@ func TestPrintDiffusersAnalysis(t *testing.T) {
 func TestPrintLoRAAnalysis(t *testing.T) {
 	t.Run("nil LoRA info", func(t *testing.T) {
 		info := &smartdl.RepoInfo{}
-		output := captureOutput(func() {
+		output := captureOutput(t, func() {
 			printLoRAAnalysis(info)
 		})
 		_ = output
@@ -198,7 +207,7 @@ func TestPrintLoRAAnalysis(t *testing.T) {
 				TargetModules:      []string{"q_proj", "v_proj"},
 			},
 		}
-		output := captureOutput(func() {
+		output := captureOutput(t, func() {
 			printLoRAAnalysis(info)
 		})
 		if !strings.Contains(output, "LoRA") {
@@ -213,7 +222,7 @@ func TestPrintLoRAAnalysis(t *testing.T) {
 func TestPrintQuantizedAnalysis(t *testing.T) {
 	t.Run("nil quantized info", func(t *testing.T) {
 		info := &smartdl.RepoInfo{}
-		output := captureOutput(func() {
+		output := captureOutput(t, func() {
 			printQuantizedAnalysis(info)
 		})
 		_ = output
@@ -231,7 +240,7 @@ func TestPrintQuantizedAnalysis(t *testing.T) {
 				Backends:          []string{"auto-gptq", "exllamav2"},
 			},
 		}
-		output := captureOutput(func() {
+		output := captureOutput(t, func() {
 			printQuantizedAnalysis(info)
 		})
 		if !strings.Contains(output, "GPTQ") {
@@ -246,7 +255,7 @@ func TestPrintQuantizedAnalysis(t *testing.T) {
 func TestPrintDatasetAnalysis(t *testing.T) {
 	t.Run("nil dataset info", func(t *testing.T) {
 		info := &smartdl.RepoInfo{}
-		output := captureOutput(func() {
+		output := captureOutput(t, func() {
 			printDatasetAnalysis(info)
 		})
 		_ = output
@@ -264,7 +273,7 @@ func TestPrintDatasetAnalysis(t *testing.T) {
 				},
 			},
 		}
-		output := captureOutput(func() {
+		output := captureOutput(t, func() {
 			printDatasetAnalysis(info)
 		})
 		if !strings.Contains(output, "parquet") {
@@ -284,7 +293,7 @@ func TestPrintGenericAnalysis(t *testing.T) {
 		},
 	}
 
-	output := captureOutput(func() {
+	output := captureOutput(t, func() {
 		printGenericAnalysis(info)
 	})
 
@@ -299,7 +308,7 @@ func TestPrintGenericAnalysis(t *testing.T) {
 func TestPrintSelectableItems(t *testing.T) {
 	t.Run("empty items", func(t *testing.T) {
 		info := &smartdl.RepoInfo{}
-		output := captureOutput(func() {
+		output := captureOutput(t, func() {
 			printSelectableItems(info)
 		})
 		if output != "" {
@@ -323,7 +332,7 @@ func TestPrintSelectableItems(t *testing.T) {
 				},
 			},
 		}
-		output := captureOutput(func() {
+		output := captureOutput(t, func() {
 			printSelectableItems(info)
 		})
 		if !strings.Contains(output, "Q4_K_M") {
@@ -347,7 +356,7 @@ func TestPrintSelectableItems(t *testing.T) {
 				},
 			},
 		}
-		output := captureOutput(func() {
+		output := captureOutput(t, func() {
 			printSelectableItems(info)
 		})
 		if !strings.Contains(output, "UNet") {
@@ -359,7 +368,7 @@ func TestPrintSelectableItems(t *testing.T) {
 func TestPrintRelatedDownloads(t *testing.T) {
 	t.Run("no related downloads", func(t *testing.T) {
 		info := &smartdl.RepoInfo{}
-		output := captureOutput(func() {
+		output := captureOutput(t, func() {
 			printRelatedDownloads(info)
 		})
 		if output != "" {
@@ -379,7 +388,7 @@ func TestPrintRelatedDownloads(t *testing.T) {
 				},
 			},
 		}
-		output := captureOutput(func() {
+		output := captureOutput(t, func() {
 			printRelatedDownloads(info)
 		})
 		if !strings.Contains(output, "Base Model") {
@@ -397,7 +406,7 @@ func TestPrintCLICommands(t *testing.T) {
 		CLICommandFull: "hfdownloader download owner/repo -F q4_k_m",
 	}
 
-	output := captureOutput(func() {
+	output := captureOutput(t, func() {
 		printCLICommands(info)
 	})
 
@@ -414,7 +423,7 @@ func TestPrintAudioAnalysis(t *testing.T) {
 		info := &smartdl.RepoInfo{
 			Files: []smartdl.FileInfo{{Name: "model.bin"}},
 		}
-		output := captureOutput(func() {
+		output := captureOutput(t, func() {
 			printAudioAnalysis(info)
 		})
 		// Should not panic
@@ -433,7 +442,7 @@ func TestPrintAudioAnalysis(t *testing.T) {
 				Framework:            "transformers",
 			},
 		}
-		output := captureOutput(func() {
+		output := captureOutput(t, func() {
 			printAudioAnalysis(info)
 		})
 		if !strings.Contains(output, "automatic-speech-recognition") {
@@ -450,7 +459,7 @@ func TestPrintVisionAnalysis(t *testing.T) {
 		info := &smartdl.RepoInfo{
 			Files: []smartdl.FileInfo{{Name: "model.bin"}},
 		}
-		output := captureOutput(func() {
+		output := captureOutput(t, func() {
 			printVisionAnalysis(info)
 		})
 		// Should not panic
@@ -469,7 +478,7 @@ func TestPrintVisionAnalysis(t *testing.T) {
 				Framework:          "transformers",
 			},
 		}
-		output := captureOutput(func() {
+		output := captureOutput(t, func() {
 			printVisionAnalysis(info)
 		})
 		if !strings.Contains(output, "image-classification") {
@@ -486,7 +495,7 @@ func TestPrintMultimodalAnalysis(t *testing.T) {
 		info := &smartdl.RepoInfo{
 			Files: []smartdl.FileInfo{{Name: "model.bin"}},
 		}
-		output := captureOutput(func() {
+		output := captureOutput(t, func() {
 			printMultimodalAnalysis(info)
 		})
 		// Should not panic
@@ -507,7 +516,7 @@ func TestPrintMultimodalAnalysis(t *testing.T) {
 				Framework:       "transformers",
 			},
 		}
-		output := captureOutput(func() {
+		output := captureOutput(t, func() {
 			printMultimodalAnalysis(info)
 		})
 		if !strings.Contains(output, "image-to-text") {
@@ -524,7 +533,7 @@ func TestPrintONNXAnalysis(t *testing.T) {
 		info := &smartdl.RepoInfo{
 			Files: []smartdl.FileInfo{{Name: "model.onnx"}},
 		}
-		output := captureOutput(func() {
+		output := captureOutput(t, func() {
 			printONNXAnalysis(info)
 		})
 		// Should not panic
@@ -543,7 +552,7 @@ func TestPrintONNXAnalysis(t *testing.T) {
 				},
 			},
 		}
-		output := captureOutput(func() {
+		output := captureOutput(t, func() {
 			printONNXAnalysis(info)
 		})
 		if !strings.Contains(output, "Optimized") {

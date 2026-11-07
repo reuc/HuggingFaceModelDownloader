@@ -17,6 +17,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/reuc/HuggingFaceModelDownloader/internal/testutil"
 )
 
 // stallingRangeServer serves Range requests for full, but the FIRST request
@@ -52,7 +54,7 @@ func stallingRangeServer(t *testing.T, full []byte) *httptest.Server {
 		w.Header().Set("Content-Length", strconv.Itoa(len(content)))
 		w.WriteHeader(status)
 		if stall {
-			w.Write(content[:len(content)/2])
+			_, _ = w.Write(content[:len(content)/2])
 			w.(http.Flusher).Flush()
 			select { // go silent until the client gives up
 			case <-r.Context().Done():
@@ -60,7 +62,7 @@ func stallingRangeServer(t *testing.T, full []byte) *httptest.Server {
 			}
 			return
 		}
-		w.Write(content)
+		_, _ = w.Write(content)
 	}))
 }
 
@@ -157,7 +159,10 @@ func TestDownloadSingle_ProgressResetsRetryBudget(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := int64(0)
 		if rng := r.Header.Get("Range"); rng != "" {
-			fmt.Sscanf(rng, "bytes=%d-", &start)
+			if _, err := fmt.Sscanf(rng, "bytes=%d-", &start); err != nil {
+				http.Error(w, "bad range", http.StatusBadRequest)
+				return
+			}
 			w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, len(full)-1, len(full)))
 			w.Header().Set("Content-Length", strconv.Itoa(len(full)-int(start)))
 			w.WriteHeader(http.StatusPartialContent)
@@ -167,10 +172,10 @@ func TestDownloadSingle_ProgressResetsRetryBudget(t *testing.T) {
 		}
 		end := start + chunk
 		if end >= int64(len(full)) {
-			w.Write(full[start:])
+			_, _ = w.Write(full[start:])
 			return
 		}
-		w.Write(full[start:end])
+		_, _ = w.Write(full[start:end])
 		w.(http.Flusher).Flush()
 		panic(http.ErrAbortHandler)
 	}))
@@ -190,9 +195,10 @@ func TestDownloadSingle_ProgressResetsRetryBudget(t *testing.T) {
 }
 
 func TestPrepareMultipartLayout(t *testing.T) {
-	writeParts := func(dst string, n int) {
+	writeParts := func(t *testing.T, dst string, n int) {
+		t.Helper()
 		for i := 0; i < n; i++ {
-			os.WriteFile(fmt.Sprintf("%s.part-%02d", dst, i), []byte("x"), 0o644)
+			testutil.WriteFile(t, fmt.Sprintf("%s.part-%02d", dst, i), []byte("x"), 0o644)
 		}
 	}
 	partCount := func(dst string) int {
@@ -202,8 +208,8 @@ func TestPrepareMultipartLayout(t *testing.T) {
 
 	t.Run("same layout keeps parts", func(t *testing.T) {
 		dst := filepath.Join(t.TempDir(), "f")
-		writeParts(dst, 4)
-		os.WriteFile(multipartLayoutFile(dst), []byte("4 100"), 0o644)
+		writeParts(t, dst, 4)
+		testutil.WriteFile(t, multipartLayoutFile(dst), []byte("4 100"), 0o644)
 		if err := prepareMultipartLayout(dst, 4, 100); err != nil {
 			t.Fatal(err)
 		}
@@ -214,8 +220,8 @@ func TestPrepareMultipartLayout(t *testing.T) {
 
 	t.Run("changed connection count discards parts", func(t *testing.T) {
 		dst := filepath.Join(t.TempDir(), "f")
-		writeParts(dst, 4)
-		os.WriteFile(multipartLayoutFile(dst), []byte("4 100"), 0o644)
+		writeParts(t, dst, 4)
+		testutil.WriteFile(t, multipartLayoutFile(dst), []byte("4 100"), 0o644)
 		if err := prepareMultipartLayout(dst, 2, 100); err != nil {
 			t.Fatal(err)
 		}
@@ -229,7 +235,7 @@ func TestPrepareMultipartLayout(t *testing.T) {
 
 	t.Run("unrecorded parts beyond current count are discarded", func(t *testing.T) {
 		dst := filepath.Join(t.TempDir(), "f")
-		writeParts(dst, 8)
+		writeParts(t, dst, 8)
 		if err := prepareMultipartLayout(dst, 4, 100); err != nil {
 			t.Fatal(err)
 		}
@@ -240,7 +246,7 @@ func TestPrepareMultipartLayout(t *testing.T) {
 
 	t.Run("unrecorded parts that fit are kept", func(t *testing.T) {
 		dst := filepath.Join(t.TempDir(), "f")
-		writeParts(dst, 4)
+		writeParts(t, dst, 4)
 		if err := prepareMultipartLayout(dst, 4, 100); err != nil {
 			t.Fatal(err)
 		}
@@ -253,7 +259,7 @@ func TestPrepareMultipartLayout(t *testing.T) {
 func TestAssembleParts_StopsOnCancel(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "p0")
-	os.WriteFile(p, testPayload(1000), 0o644)
+	testutil.WriteFile(t, p, testPayload(1000), 0o644)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -266,7 +272,7 @@ func TestAssembleParts_StopsOnCancel(t *testing.T) {
 func TestComputeSHA256Ctx_ReportsProgress(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "f")
 	data := testPayload(3 << 20)
-	os.WriteFile(path, data, 0o644)
+	testutil.WriteFile(t, path, data, 0o644)
 
 	var last int64
 	sum, err := computeSHA256Ctx(context.Background(), path, func(done int64) { last = done })

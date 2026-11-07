@@ -57,7 +57,9 @@ func TestCreateJob_DedupConsidersFilters(t *testing.T) {
 func TestCacheDelete_RefusedWhileDownloading(t *testing.T) {
 	srv := newTestServer()
 	srv.jobs.runFn = func(*Job) { select {} }
-	srv.jobs.CreateJob(DownloadRequest{Repo: "o/r"})
+	if _, _, err := srv.jobs.CreateJob(DownloadRequest{Repo: "o/r"}); err != nil {
+		t.Fatal(err)
+	}
 	mux := http.NewServeMux()
 	srv.registerAPIRoutes(mux)
 	w := httptest.NewRecorder()
@@ -95,7 +97,9 @@ func TestJobCommand(t *testing.T) {
 func TestCacheDelete_GuardIgnoresCase(t *testing.T) {
 	srv := newTestServer()
 	srv.jobs.runFn = func(*Job) { select {} }
-	srv.jobs.CreateJob(DownloadRequest{Repo: "bartowski/SmolLM2"})
+	if _, _, err := srv.jobs.CreateJob(DownloadRequest{Repo: "bartowski/SmolLM2"}); err != nil {
+		t.Fatal(err)
+	}
 	if !srv.jobs.HasActiveJob("BARTOWSKI/smollm2", false) {
 		t.Error("case-changed repo id bypassed the active-download guard")
 	}

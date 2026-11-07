@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/reuc/HuggingFaceModelDownloader/internal/testutil"
 )
 
 // hubRepo writes a minimal HF cache entry (one config.json per commit, refs/main
@@ -17,18 +19,18 @@ import (
 func hubRepo(t *testing.T, cacheDir, kind, repo string, commits ...string) string {
 	t.Helper()
 	dir := filepath.Join(cacheDir, "hub", kind+"--"+strings.ReplaceAll(repo, "/", "--"))
-	os.MkdirAll(filepath.Join(dir, "blobs"), 0o755)
+	testutil.MkdirAll(t, filepath.Join(dir, "blobs"), 0o755)
 	for i, c := range commits {
 		snap := filepath.Join(dir, "snapshots", c)
-		os.MkdirAll(snap, 0o755)
+		testutil.MkdirAll(t, snap, 0o755)
 		blob := fmt.Sprintf("%064d", i+1)
-		os.WriteFile(filepath.Join(dir, "blobs", blob), []byte(repo+"@"+c), 0o644)
+		testutil.WriteFile(t, filepath.Join(dir, "blobs", blob), []byte(repo+"@"+c), 0o644)
 		if err := os.Symlink(filepath.Join("..", "..", "blobs", blob), filepath.Join(snap, "config.json")); err != nil {
 			t.Fatal(err)
 		}
 	}
-	os.MkdirAll(filepath.Join(dir, "refs"), 0o755)
-	os.WriteFile(filepath.Join(dir, "refs", "main"), []byte(commits[len(commits)-1]), 0o644)
+	testutil.MkdirAll(t, filepath.Join(dir, "refs"), 0o755)
+	testutil.WriteFile(t, filepath.Join(dir, "refs", "main"), []byte(commits[len(commits)-1]), 0o644)
 	return dir
 }
 

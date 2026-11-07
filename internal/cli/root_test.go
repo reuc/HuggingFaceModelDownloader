@@ -7,10 +7,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/reuc/HuggingFaceModelDownloader/internal/testutil"
 	"github.com/reuc/HuggingFaceModelDownloader/pkg/hfdownloader"
 )
 
@@ -32,8 +32,9 @@ func TestRootOpts(t *testing.T) {
 	})
 
 	t.Run("with values", func(t *testing.T) {
+		token := testutil.Secret("hf_")
 		ro := &RootOpts{
-			Token:    "test-token",
+			Token:    token,
 			JSONOut:  true,
 			Quiet:    true,
 			Verbose:  true,
@@ -41,7 +42,7 @@ func TestRootOpts(t *testing.T) {
 			LogFile:  "/path/to/log",
 			LogLevel: "debug",
 		}
-		if ro.Token != "test-token" {
+		if ro.Token != token {
 			t.Errorf("Token = %q", ro.Token)
 		}
 		if !ro.JSONOut {
@@ -191,8 +192,8 @@ func TestBuildCommandString(t *testing.T) {
 		cfg := defaultSettings()
 		cfg.Proxy = &hfdownloader.ProxyConfig{
 			URL:      "http://proxy:8080",
-			Username: "user", // Should be omitted
-			Password: "pass", // Should be omitted
+			Username: "user",              // Should be omitted
+			Password: testutil.Secret(""), // Should be omitted
 		}
 
 		cmd := buildCommandString(nil, job, cfg)
@@ -307,11 +308,8 @@ func TestApplySettingsDefaults(t *testing.T) {
 
 	t.Run("no config file", func(t *testing.T) {
 		// Use temp directory without any config
-		origHome := os.Getenv("HOME")
-		defer os.Setenv("HOME", origHome)
-
 		tmpDir := t.TempDir()
-		os.Setenv("HOME", tmpDir)
+		t.Setenv("HOME", tmpDir)
 
 		ro := &RootOpts{}
 		cfg := &hfdownloader.Settings{}
@@ -336,7 +334,7 @@ func TestApplySettingsDefaults(t *testing.T) {
 	t.Run("invalid JSON content", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		configPath := filepath.Join(tmpDir, "bad.json")
-		os.WriteFile(configPath, []byte("{ invalid json"), 0o644)
+		testutil.WriteFile(t, configPath, []byte("{ invalid json"), 0o644)
 
 		ro := &RootOpts{Config: configPath}
 		cfg := &hfdownloader.Settings{}
@@ -350,7 +348,7 @@ func TestApplySettingsDefaults(t *testing.T) {
 	t.Run("invalid YAML content", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		configPath := filepath.Join(tmpDir, "bad.yaml")
-		os.WriteFile(configPath, []byte("invalid: yaml: content: ["), 0o644)
+		testutil.WriteFile(t, configPath, []byte("invalid: yaml: content: ["), 0o644)
 
 		ro := &RootOpts{Config: configPath}
 		cfg := &hfdownloader.Settings{}

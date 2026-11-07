@@ -282,35 +282,7 @@ func QuantizedToSelectableItems(info *QuantizedInfo, files []FileInfo) []Selecta
 
 	// Add format options if both are available
 	if hasSafetensors && hasPytorchBin {
-		items = append(items, SelectableItem{
-			ID:           "safetensors",
-			Label:        "SafeTensors",
-			Description:  "Faster loading, recommended",
-			Size:         safetensorsSize,
-			SizeHuman:    humanSize(safetensorsSize),
-			Quality:      5,
-			QualityStars: "★★★★★",
-			Recommended:  true,
-			Category:     "format",
-			FilterValue:  "safetensors",
-		})
-
-		binFilter, binSize := pytorchBinSelection(files)
-		if binSize == 0 {
-			binSize = pytorchBinSize
-		}
-		items = append(items, SelectableItem{
-			ID:           "pytorch",
-			Label:        "PyTorch (.bin)",
-			Description:  "Legacy format",
-			Size:         binSize,
-			SizeHuman:    humanSize(binSize),
-			Quality:      3,
-			QualityStars: "★★★☆☆",
-			Recommended:  false,
-			Category:     "format",
-			FilterValue:  binFilter,
-		})
+		items = append(items, safetensorsVsBinItems(files, safetensorsSize, pytorchBinSize)...)
 	}
 
 	return items

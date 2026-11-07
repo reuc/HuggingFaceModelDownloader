@@ -231,9 +231,7 @@ func RunBranchPicker(repo string, refs []smartdl.RepoRef) (*BranchPickerResult, 
 	}
 
 	m := finalModel.(*BranchPickerModel)
-	result := m.Result()
-
-	return &result, nil
+	return new(m.Result()), nil
 }
 
 // Ensure BranchPickerModel implements tea.Model.

@@ -34,7 +34,7 @@ func TestDownloadSingle_RangeIgnoredWithDropsTerminates(t *testing.T) {
 		gets.Add(1)
 		w.Header().Set("Content-Length", strconv.Itoa(len(full)))
 		w.WriteHeader(http.StatusOK)
-		w.Write(full[:3000])
+		_, _ = w.Write(full[:3000])
 		w.(http.Flusher).Flush()
 		panic(http.ErrAbortHandler)
 	}))
@@ -114,7 +114,7 @@ func TestDownloadMultipart_FallsBackWhenRangeIgnored(t *testing.T) {
 		if r.Method == http.MethodHead {
 			return
 		}
-		w.Write(full) // ignores Range
+		_, _ = w.Write(full) // ignores Range
 	}))
 	defer srv.Close()
 
@@ -143,9 +143,12 @@ func TestDownloadMultipart_ClampsOverlongPart(t *testing.T) {
 			return
 		}
 		var start, end int
-		fmt.Sscanf(r.Header.Get("Range"), "bytes=%d-%d", &start, &end)
+		if _, err := fmt.Sscanf(r.Header.Get("Range"), "bytes=%d-%d", &start, &end); err != nil {
+			http.Error(w, "bad range", http.StatusBadRequest)
+			return
+		}
 		w.WriteHeader(http.StatusPartialContent)
-		w.Write(full[start:]) // everything to EOF, not just the range
+		_, _ = w.Write(full[start:]) // everything to EOF, not just the range
 	}))
 	defer srv.Close()
 
@@ -245,7 +248,7 @@ func (h *fakeHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	p := r.URL.Path
 	switch {
 	case strings.HasPrefix(p, "/api/models/o/r/revision/"):
-		json.NewEncoder(w).Encode(map[string]string{"sha": h.commit})
+		_ = json.NewEncoder(w).Encode(map[string]string{"sha": h.commit})
 	case strings.HasPrefix(p, "/api/models/o/r/tree/"):
 		rev := strings.TrimPrefix(p, "/api/models/o/r/tree/")
 		if rev == h.commit && !h.treeAcceptSHA {
@@ -261,7 +264,7 @@ func (h *fakeHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		for path, data := range h.small {
 			nodes = append(nodes, hfNode{Type: "file", Path: path, Size: int64(len(data)), Oid: gitBlobOID(data)})
 		}
-		json.NewEncoder(w).Encode(nodes)
+		_ = json.NewEncoder(w).Encode(nodes)
 	case strings.HasPrefix(p, "/o/r/raw/"):
 		_, path, _ := strings.Cut(strings.TrimPrefix(p, "/o/r/raw/"), "/")
 		data, ok := h.small[path]

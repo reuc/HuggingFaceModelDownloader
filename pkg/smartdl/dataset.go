@@ -219,9 +219,9 @@ func selectPrimaryFormat(formats []string) string {
 	priorities := []string{"parquet", "arrow", "jsonl", "json", "csv", "txt"}
 
 	for _, pref := range priorities {
-		for _, fmt := range formats {
-			if fmt == pref {
-				return fmt
+		for _, format := range formats {
+			if format == pref {
+				return format
 			}
 		}
 	}

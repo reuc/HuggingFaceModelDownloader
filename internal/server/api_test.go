@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/reuc/HuggingFaceModelDownloader/internal/testutil"
 	"github.com/reuc/HuggingFaceModelDownloader/pkg/hfdownloader"
 )
 
@@ -42,7 +43,9 @@ func TestAPI_Health(t *testing.T) {
 	}
 
 	var resp map[string]any
-	json.Unmarshal(w.Body.Bytes(), &resp)
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v: %s", err, w.Body.String())
+	}
 
 	if resp["status"] != "ok" {
 		t.Errorf("Expected status ok, got %v", resp["status"])
@@ -65,7 +68,9 @@ func TestAPI_GetSettings(t *testing.T) {
 	}
 
 	var resp SettingsResponse
-	json.Unmarshal(w.Body.Bytes(), &resp)
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v: %s", err, w.Body.String())
+	}
 
 	if resp.CacheDir != testCacheDir {
 		t.Errorf("Expected cacheDir %s, got %s", testCacheDir, resp.CacheDir)
@@ -73,9 +78,10 @@ func TestAPI_GetSettings(t *testing.T) {
 }
 
 func TestAPI_GetSettings_TokenMasked(t *testing.T) {
+	token := testutil.Secret("hf_")
 	cfg := Config{
 		CacheDir: "/tmp/test_cache",
-		Token:    "hf_abcdefghijklmnop",
+		Token:    token,
 	}
 	srv := New(cfg)
 
@@ -85,13 +91,15 @@ func TestAPI_GetSettings_TokenMasked(t *testing.T) {
 	srv.handleGetSettings(w, req)
 
 	var resp SettingsResponse
-	json.Unmarshal(w.Body.Bytes(), &resp)
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v: %s", err, w.Body.String())
+	}
 
 	// Token should be masked, not exposed
-	if resp.Token == "hf_abcdefghijklmnop" {
+	if resp.Token == token {
 		t.Error("Token should be masked, not exposed in full")
 	}
-	if resp.Token != "********mnop" {
+	if want := "********" + token[len(token)-4:]; resp.Token != want {
 		t.Errorf("Expected masked token ********mnop, got %s", resp.Token)
 	}
 }
@@ -228,7 +236,9 @@ func TestAPI_StartDownload_OutputIgnored(t *testing.T) {
 	}
 
 	var resp Job
-	json.Unmarshal(w.Body.Bytes(), &resp)
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v: %s", err, w.Body.String())
+	}
 
 	// Output should be server-controlled (HF cache), not from request
 	if resp.OutputDir == "/etc/evil" {
@@ -250,7 +260,9 @@ func TestAPI_StartDownload_DatasetUsesSameCacheDir(t *testing.T) {
 	srv.handleStartDownload(w, req)
 
 	var resp Job
-	json.Unmarshal(w.Body.Bytes(), &resp)
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v: %s", err, w.Body.String())
+	}
 
 	// In v3, both models and datasets use the same HF cache directory
 	if resp.OutputDir != testCacheDir {
@@ -274,7 +286,9 @@ func TestAPI_StartDownload_DuplicateReturnsExisting(t *testing.T) {
 	}
 
 	var job1 Job
-	json.Unmarshal(w1.Body.Bytes(), &job1)
+	if err := json.Unmarshal(w1.Body.Bytes(), &job1); err != nil {
+		t.Fatalf("decode first response: %v: %s", err, w1.Body.String())
+	}
 
 	// Second request (duplicate)
 	req2 := httptest.NewRequest("POST", "/api/download", bytes.NewBufferString(body))
@@ -287,7 +301,9 @@ func TestAPI_StartDownload_DuplicateReturnsExisting(t *testing.T) {
 	}
 
 	var resp map[string]any
-	json.Unmarshal(w2.Body.Bytes(), &resp)
+	if err := json.Unmarshal(w2.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode duplicate response: %v: %s", err, w2.Body.String())
+	}
 
 	if resp["message"] != "Download already in progress" {
 		t.Errorf("Expected duplicate message, got %v", resp["message"])
@@ -319,7 +335,9 @@ func TestAPI_ListJobs(t *testing.T) {
 	}
 
 	var resp map[string]any
-	json.Unmarshal(listW.Body.Bytes(), &resp)
+	if err := json.Unmarshal(listW.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v: %s", err, listW.Body.String())
+	}
 
 	count := int(resp["count"].(float64))
 	if count < 1 {
@@ -338,7 +356,9 @@ func TestAPI_ParseFiltersFromRepo(t *testing.T) {
 	srv.handleStartDownload(w, req)
 
 	var resp Job
-	json.Unmarshal(w.Body.Bytes(), &resp)
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v: %s", err, w.Body.String())
+	}
 
 	if resp.Repo != "owner/model" {
 		t.Errorf("Repo should be parsed without filters, got %s", resp.Repo)
@@ -349,6 +369,22 @@ func TestAPI_ParseFiltersFromRepo(t *testing.T) {
 }
 
 // --- Delete Cache Security Tests ---
+
+// apiTestCacheDelete sends DELETE target to handleCacheDelete with the "repo"
+// path value set to repo and checks the response status.
+func apiTestCacheDelete(t *testing.T, srv *Server, target, repo string, wantCode int) {
+	t.Helper()
+	req := httptest.NewRequest("DELETE", target, nil)
+	req.SetPathValue("repo", repo)
+	w := httptest.NewRecorder()
+
+	srv.handleCacheDelete(w, req)
+
+	if w.Code != wantCode {
+		t.Errorf("Expected %d for %q, got %d. Body: %s",
+			wantCode, repo, w.Code, w.Body.String())
+	}
+}
 
 func TestAPI_CacheDelete_PathTraversal(t *testing.T) {
 	srv := newTestServer()
@@ -403,16 +439,7 @@ func TestAPI_CacheDelete_PathTraversal(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest("DELETE", "/api/cache/"+tt.repo, nil)
-			req.SetPathValue("repo", tt.repo)
-			w := httptest.NewRecorder()
-
-			srv.handleCacheDelete(w, req)
-
-			if w.Code != tt.wantCode {
-				t.Errorf("Expected %d for %q, got %d. Body: %s",
-					tt.wantCode, tt.repo, w.Code, w.Body.String())
-			}
+			apiTestCacheDelete(t, srv, "/api/cache/"+tt.repo, tt.repo, tt.wantCode)
 		})
 	}
 }
@@ -482,16 +509,8 @@ func TestAPI_CacheDelete_InvalidCharacters(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest("DELETE", "/api/cache/test/repo", nil)
-			req.SetPathValue("repo", tt.repo) // Set path value directly to bypass URL parsing
-			w := httptest.NewRecorder()
-
-			srv.handleCacheDelete(w, req)
-
-			if w.Code != tt.wantCode {
-				t.Errorf("Expected %d for %q, got %d. Body: %s",
-					tt.wantCode, tt.repo, w.Code, w.Body.String())
-			}
+			// Fixed target: the path value is set directly to bypass URL parsing.
+			apiTestCacheDelete(t, srv, "/api/cache/test/repo", tt.repo, tt.wantCode)
 		})
 	}
 }
@@ -548,16 +567,7 @@ func TestAPI_CacheDelete_ValidRepoFormat(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest("DELETE", "/api/cache/"+tt.repo, nil)
-			req.SetPathValue("repo", tt.repo)
-			w := httptest.NewRecorder()
-
-			srv.handleCacheDelete(w, req)
-
-			if w.Code != tt.wantCode {
-				t.Errorf("Expected %d for %q, got %d. Body: %s",
-					tt.wantCode, tt.repo, w.Code, w.Body.String())
-			}
+			apiTestCacheDelete(t, srv, "/api/cache/"+tt.repo, tt.repo, tt.wantCode)
 		})
 	}
 }
@@ -630,5 +640,19 @@ func TestIsValidRepoComponent(t *testing.T) {
 				t.Errorf("isValidRepoComponent(%q) = %v, want %v", tt.input, got, tt.want)
 			}
 		})
+	}
+}
+
+// A rebuild request whose body can't be decoded is rejected rather than run
+// with default options (which silently skipped the cleanup asked for).
+func TestAPI_CacheRebuild_RejectsMalformedBody(t *testing.T) {
+	srv := newTestServer()
+	for _, body := range []string{`{"clean":"true"}`, `{"clean":`, `not json`} {
+		req := httptest.NewRequest("POST", "/api/cache/rebuild", bytes.NewBufferString(body))
+		w := httptest.NewRecorder()
+		srv.handleCacheRebuild(w, req)
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("body %q: got %d, want 400 (%s)", body, w.Code, w.Body.String())
+		}
 	}
 }

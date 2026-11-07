@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/reuc/HuggingFaceModelDownloader/internal/testutil"
 	"github.com/reuc/HuggingFaceModelDownloader/pkg/hfdownloader"
 )
 
@@ -117,7 +118,7 @@ func TestCacheDir_Resolution(t *testing.T) {
 	t.Run("uses provided cache dir", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		cacheDir := filepath.Join(tmpDir, "custom-cache")
-		os.MkdirAll(cacheDir, 0o755)
+		testutil.MkdirAll(t, cacheDir, 0o755)
 
 		// Should use the provided directory
 		if _, err := os.Stat(cacheDir); os.IsNotExist(err) {

@@ -61,23 +61,9 @@ Examples:
 			}
 			cache := hfdownloader.NewHFCache(cacheDir, hfdownloader.DefaultStaleTimeout)
 
-			repoType := hfdownloader.RepoTypeModel
-			if isDataset {
-				repoType = hfdownloader.RepoTypeDataset
-			}
-			repoDir, err := cache.Repo(repo, repoType)
+			repoDir, err := lookupCachedRepo(cache, repo, isDataset)
 			if err != nil {
 				return err
-			}
-			if !isDataset {
-				// Fall back to a cached dataset of that name.
-				if _, err := os.Stat(repoDir.Path()); os.IsNotExist(err) && !repoDir.IsFlat() {
-					if ds, err := cache.Repo(repo, hfdownloader.RepoTypeDataset); err == nil {
-						if _, err := os.Stat(ds.Path()); err == nil || ds.IsFlat() {
-							repoDir = ds
-						}
-					}
-				}
 			}
 
 			res, err := repoDir.Export(dest, hfdownloader.ExportOptions{
@@ -129,4 +115,29 @@ Examples:
 	cmd.Flags().BoolVar(&isDataset, "dataset", false, "The repo is a dataset")
 	cmd.Flags().StringSliceVarP(&filters, "filters", "F", nil, "Export only matching weight/data files (exact match, like download -F --exact); other files are always exported")
 	return cmd
+}
+
+// lookupCachedRepo returns the cache entry for repo: the dataset of that name
+// if isDataset, else the model, falling back to a cached dataset of that name
+// when the model is not cached (neither in hub/ nor flat).
+func lookupCachedRepo(cache *hfdownloader.HFCache, repo string, isDataset bool) (*hfdownloader.RepoDir, error) {
+	repoType := hfdownloader.RepoTypeModel
+	if isDataset {
+		repoType = hfdownloader.RepoTypeDataset
+	}
+	rd, err := cache.Repo(repo, repoType)
+	if err != nil {
+		return nil, err
+	}
+	if !isDataset {
+		// Fall back to a cached dataset of that name.
+		if _, err := os.Stat(rd.Path()); os.IsNotExist(err) && !rd.IsFlat() {
+			if ds, err := cache.Repo(repo, hfdownloader.RepoTypeDataset); err == nil {
+				if _, err := os.Stat(ds.Path()); err == nil || ds.IsFlat() {
+					rd = ds
+				}
+			}
+		}
+	}
+	return rd, nil
 }

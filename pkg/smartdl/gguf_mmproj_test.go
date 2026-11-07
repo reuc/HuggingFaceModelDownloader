@@ -66,7 +66,7 @@ func TestAnalyzeGGUF_MMProjExcludedFromQuantizations(t *testing.T) {
 	// 26 LLM files, 3 mmproj files. Quantizations should only include the 26.
 	const wantLLMQuants = 26
 	if got := len(info.Quantizations); got != wantLLMQuants {
-		names := []string{}
+		var names []string
 		for _, q := range info.Quantizations {
 			names = append(names, q.File.Name)
 		}
@@ -82,7 +82,7 @@ func TestAnalyzeGGUF_MMProjExcludedFromQuantizations(t *testing.T) {
 
 	// MMProjFiles should contain all three vision-encoder files.
 	if got := len(info.MMProjFiles); got != 3 {
-		names := []string{}
+		var names []string
 		for _, f := range info.MMProjFiles {
 			names = append(names, f.Name)
 		}
@@ -146,7 +146,7 @@ func TestGGUFToSelectableItems_EmitsVisionEncoderItem(t *testing.T) {
 	}
 	// FilterValue should be narrow enough to exclude BF16/F32 mmproj files.
 	// Using strings.Contains semantics from the downloader filter code.
-	matches := []string{}
+	var matches []string
 	for _, f := range []string{"mmproj-F16.gguf", "mmproj-BF16.gguf", "mmproj-F32.gguf"} {
 		if strings.Contains(strings.ToLower(f), strings.ToLower(pref.FilterValue)) {
 			matches = append(matches, f)

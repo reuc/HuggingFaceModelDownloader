@@ -114,7 +114,7 @@ func TestHandleDismissJob_EndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("POST dismiss: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want 200", resp.StatusCode)
@@ -135,7 +135,7 @@ func TestHandleDismissJob_EndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("POST dismiss (busy): %v", err)
 	}
-	defer resp2.Body.Close()
+	defer func() { _ = resp2.Body.Close() }()
 	if resp2.StatusCode != http.StatusConflict {
 		t.Errorf("busy dismiss status = %d, want 409", resp2.StatusCode)
 	}
@@ -145,7 +145,7 @@ func TestHandleDismissJob_EndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("POST dismiss (nope): %v", err)
 	}
-	defer resp3.Body.Close()
+	defer func() { _ = resp3.Body.Close() }()
 	if resp3.StatusCode != http.StatusNotFound {
 		t.Errorf("nope dismiss status = %d, want 404", resp3.StatusCode)
 	}

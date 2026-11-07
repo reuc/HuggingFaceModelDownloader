@@ -480,11 +480,11 @@ func (r *RepoDir) Flatten(opts FlattenOptions) (*FlattenResult, error) {
 		}
 		src := e.src
 		if fi, err := os.Lstat(src); err == nil && fi.Mode()&os.ModeSymlink != 0 {
-			real, err := filepath.EvalSymlinks(src)
+			resolved, err := filepath.EvalSymlinks(src)
 			if err != nil {
 				return nil, fmt.Errorf("%s: broken link: %w", e.rel, err)
 			}
-			src = real
+			src = resolved
 		}
 		info, err := os.Stat(src)
 		if err != nil {

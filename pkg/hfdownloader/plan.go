@@ -429,7 +429,7 @@ func resolveAcceptsURL(ctx context.Context, httpc *http.Client, token, u string)
 	if err != nil {
 		return true
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	return resp.StatusCode != http.StatusNotFound && resp.StatusCode != http.StatusBadRequest
 }
 

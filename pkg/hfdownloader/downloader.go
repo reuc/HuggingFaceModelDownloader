@@ -89,6 +89,11 @@ func Download(ctx context.Context, job Job, cfg Settings, progress ProgressFunc)
 	if cfg.MaxActiveDownloads <= 0 {
 		cfg.MaxActiveDownloads = runtime.GOMAXPROCS(0)
 	}
+	if cfg.Retries < 0 {
+		// The retry loops make 1+Retries attempts; a negative count would
+		// make none and report success without downloading anything.
+		cfg.Retries = 0
+	}
 
 	// Determine storage mode: HF cache (new) vs flat directory (legacy)
 	// Use HF cache mode when:
@@ -317,10 +322,14 @@ LOOP:
 							return false, "", err
 						}
 						if status == BlobComplete {
-							// Blob exists, but ensure symlinks are in place
+							// Blob exists, but ensure symlinks are in place. A
+							// friendly link that can't be made fails the file,
+							// as it does after a download (StoreDownloadedFile).
 							if err := repoDir.createSnapshotSymlink(plan.Commit, it.RelativePath, it.SHA256); err == nil {
 								if !cfg.NoFriendlyView {
-									repoDir.CreateFriendlySymlink(plan.Commit, it.RelativePath, filterSubdir)
+									if err := repoDir.CreateFriendlySymlink(plan.Commit, it.RelativePath, filterSubdir); err != nil {
+										return false, "", fmt.Errorf("create friendly symlink for %s: %w", finalRel, err)
+									}
 								}
 							}
 							return true, "blob exists", nil
@@ -346,7 +355,9 @@ LOOP:
 						}
 						if sha != "" && repoDir.createSnapshotSymlink(plan.Commit, it.RelativePath, sha) == nil {
 							if !cfg.NoFriendlyView {
-								repoDir.CreateFriendlySymlink(plan.Commit, it.RelativePath, filterSubdir)
+								if err := repoDir.CreateFriendlySymlink(plan.Commit, it.RelativePath, filterSubdir); err != nil {
+									return false, "", fmt.Errorf("create friendly symlink for %s: %w", finalRel, err)
+								}
 							}
 							reusedSHA = sha
 							return true, "unchanged", nil
@@ -437,11 +448,11 @@ LOOP:
 			if useHFCache && finishedTempFile(dst, it) {
 				emit(ProgressEvent{Event: "file_progress", Path: finalRel, Downloaded: it.Size, Total: it.Size})
 				verr := verify()
-				var ve *VerificationError
+				_, corrupt := errors.AsType[*VerificationError](verr)
 				switch {
 				case verr == nil:
 					verified = true
-				case errors.As(verr, &ve):
+				case corrupt:
 					_ = os.Remove(dst)
 				default:
 					select {
@@ -471,8 +482,7 @@ LOOP:
 				if verr := verify(); verr != nil {
 					// A file that failed verification is corrupt: remove it so it
 					// isn't left consuming disk space (the next run re-downloads).
-					var ve *VerificationError
-					if errors.As(verr, &ve) {
+					if _, ok := errors.AsType[*VerificationError](verr); ok {
 						_ = os.Remove(dst)
 					}
 					select {
@@ -621,13 +631,34 @@ LOOP:
 // fetch only the remaining bytes. If the server ignores the Range header and
 // responds with 200 (full body), the .part file is truncated and the download
 // restarts from zero.
-func downloadSingle(ctx context.Context, httpc *http.Client, token string, job Job, cfg Settings, it PlanItem, dst string, emit func(ProgressEvent)) error {
+func downloadSingle(ctx context.Context, httpc *http.Client, token string, _ Job, cfg Settings, it PlanItem, dst string, emit func(ProgressEvent)) (err error) {
 	tmp := dst + ".part"
 	out, err := os.OpenFile(tmp, os.O_RDWR|os.O_CREATE, 0o644)
 	if err != nil {
 		return err
 	}
-	defer out.Close()
+	// The partial is closed exactly once: explicitly before it is renamed or
+	// removed, otherwise on return. A failed close of the written file is an
+	// error (its data may not have reached the disk).
+	closed := false
+	closeOut := func() error {
+		if closed {
+			return nil
+		}
+		closed = true
+		return out.Close()
+	}
+	defer func() {
+		if cerr := closeOut(); cerr != nil && err == nil {
+			err = cerr
+		}
+	}()
+	finish := func() error {
+		if err := closeOut(); err != nil {
+			return err
+		}
+		return os.Rename(tmp, dst)
+	}
 
 	fi, err := out.Stat()
 	if err != nil {
@@ -637,8 +668,7 @@ func downloadSingle(ctx context.Context, httpc *http.Client, token string, job J
 
 	// If the partial is already exactly the right size, finalize without network.
 	if it.Size > 0 && pos == it.Size {
-		out.Close()
-		return os.Rename(tmp, dst)
+		return finish()
 	}
 	// If the partial is larger than expected (stale/corrupt), start over.
 	if it.Size > 0 && pos > it.Size {
@@ -689,12 +719,12 @@ func downloadSingle(ctx context.Context, httpc *http.Client, token string, job J
 			// throw away any existing partial bytes and start fresh.
 			if pos > 0 && resp.StatusCode == http.StatusOK {
 				if err := out.Truncate(0); err != nil {
-					resp.Body.Close()
+					_ = resp.Body.Close()
 					cancelAttempt()
 					return err
 				}
 				if _, err := out.Seek(0, io.SeekStart); err != nil {
-					resp.Body.Close()
+					_ = resp.Body.Close()
 					cancelAttempt()
 					return err
 				}
@@ -703,12 +733,13 @@ func downloadSingle(ctx context.Context, httpc *http.Client, token string, job J
 			if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 				apiErr := downloadStatusError(resp, it)
 				serverWait = retryAfter(resp)
-				resp.Body.Close()
+				_ = resp.Body.Close()
 				if !apiErr.IsRetryable() {
 					// 401/403/404 won't change on retry; fail fast and don't
-					// leave an empty partial behind.
+					// leave an empty partial behind. apiErr is the failure to
+					// report; the partial is closed first so it can be removed.
 					cancelAttempt()
-					out.Close()
+					_ = closeOut()
 					removeIfEmpty(tmp)
 					return apiErr
 				}
@@ -719,11 +750,10 @@ func downloadSingle(ctx context.Context, httpc *http.Client, token string, job J
 				pr.downloaded = pos // emitted progress reflects cumulative bytes
 				_, cerr := io.Copy(out, pr)
 				guard.stop()
-				resp.Body.Close()
+				_ = resp.Body.Close()
 				if cerr == nil {
 					cancelAttempt()
-					out.Close()
-					return os.Rename(tmp, dst)
+					return finish()
 				}
 				lastErr = guard.wrapErr(cerr, stall)
 				// Update pos to current file position so the next retry issues
@@ -933,10 +963,14 @@ func globEscape(s string) string {
 // the part requests. Without it, one dropped connection or dial timeout at
 // the start of a file failed it outright while every request after the HEAD
 // would have been retried.
-func headWithRetry(ctx context.Context, httpc *http.Client, token string, cfg Settings, it PlanItem, emit func(ProgressEvent)) (*http.Response, error) {
+//
+// It returns only the response headers (the body is closed here), and a
+// non-nil error whenever the headers are nil: at least one request is made
+// even if cfg.Retries is negative.
+func headWithRetry(ctx context.Context, httpc *http.Client, token string, cfg Settings, it PlanItem, emit func(ProgressEvent)) (http.Header, error) {
 	retry := newRetry(cfg)
 	var lastErr error
-	for attempt := 0; attempt <= cfg.Retries; attempt++ {
+	for attempt := 0; attempt <= max(cfg.Retries, 0); attempt++ {
 		var serverWait time.Duration
 		req, _ := http.NewRequestWithContext(ctx, "HEAD", it.URL, nil)
 		addAuth(req, token)
@@ -944,9 +978,9 @@ func headWithRetry(ctx context.Context, httpc *http.Client, token string, cfg Se
 		if err != nil {
 			lastErr = err
 		} else {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			if resp.StatusCode < 400 {
-				return resp, nil
+				return resp.Header, nil
 			}
 			apiErr := downloadStatusError(resp, it)
 			if !apiErr.IsRetryable() {
@@ -975,15 +1009,15 @@ func headWithRetry(ctx context.Context, httpc *http.Client, token string, cfg Se
 // downloadMultipart downloads a file using multiple parallel range requests.
 func downloadMultipart(ctx context.Context, httpc *http.Client, token string, job Job, cfg Settings, it PlanItem, dst string, emit func(ProgressEvent)) error {
 	// HEAD to check access and resolve the size
-	resp, err := headWithRetry(ctx, httpc, token, cfg, it, emit)
+	header, err := headWithRetry(ctx, httpc, token, cfg, it, emit)
 	if err != nil {
 		return err
 	}
 
 	if it.Size == 0 {
-		if clen := resp.Header.Get("Content-Length"); clen != "" {
-			var n int64
-			fmt.Sscan(clen, &n)
+		// An unparsable or non-positive length leaves the size unknown, so the
+		// file is fetched as a single stream below.
+		if n, err := strconv.ParseInt(header.Get("Content-Length"), 10, 64); err == nil && n > 0 {
 			it.Size = n
 		}
 	}
@@ -1037,24 +1071,35 @@ func downloadMultipart(ctx context.Context, httpc *http.Client, token string, jo
 			tmp := tmpParts[i]
 			expected := end - start + 1
 
+			// partErr is what this part reports; it is sent once, on exit,
+			// after the part file is closed (a failed close of a written part
+			// is an error too).
+			var partErr error
+			defer func() {
+				if partErr != nil {
+					select {
+					case errCh <- partErr:
+					default:
+					}
+				}
+			}()
+
 			// Open or create the part file without truncating; we may be
 			// resuming from a previous interrupted run.
 			out, err := os.OpenFile(tmp, os.O_RDWR|os.O_CREATE, 0o644)
 			if err != nil {
-				select {
-				case errCh <- err:
-				default:
-				}
+				partErr = err
 				return
 			}
-			defer out.Close()
+			defer func() {
+				if cerr := out.Close(); cerr != nil && partErr == nil {
+					partErr = cerr
+				}
+			}()
 
 			fi, err := out.Stat()
 			if err != nil {
-				select {
-				case errCh <- err:
-				default:
-				}
+				partErr = err
 				return
 			}
 			pos := fi.Size()
@@ -1065,19 +1110,13 @@ func downloadMultipart(ctx context.Context, httpc *http.Client, token string, jo
 			// Oversize (stale/corrupt) — reset.
 			if pos > expected {
 				if err := out.Truncate(0); err != nil {
-					select {
-					case errCh <- err:
-					default:
-					}
+					partErr = err
 					return
 				}
 				pos = 0
 			}
 			if _, err := out.Seek(pos, io.SeekStart); err != nil {
-				select {
-				case errCh <- err:
-				default:
-				}
+				partErr = err
 				return
 			}
 
@@ -1107,19 +1146,19 @@ func downloadMultipart(ctx context.Context, httpc *http.Client, token string, jo
 				} else if rs.StatusCode == http.StatusOK {
 					// The server ignored Range: parts can't work, so stop them
 					// all and let the caller fall back to a single stream.
-					rs.Body.Close()
+					_ = rs.Body.Close()
 					cancelAttempt()
 					cancelParts()
-					errCh <- errRangeIgnored
+					partErr = errRangeIgnored
 					return
 				} else if rs.StatusCode != http.StatusPartialContent {
 					apiErr := downloadStatusError(rs, it)
 					serverWait = retryAfter(rs)
-					rs.Body.Close()
+					_ = rs.Body.Close()
 					if !apiErr.IsRetryable() {
 						cancelAttempt()
 						cancelParts()
-						errCh <- apiErr
+						partErr = apiErr
 						return
 					}
 					lastErr = apiErr
@@ -1129,7 +1168,7 @@ func downloadMultipart(ctx context.Context, httpc *http.Client, token string, jo
 					// sends more than was asked for.
 					_, cerr := io.Copy(out, io.LimitReader(guard, expected-pos))
 					guard.stop()
-					rs.Body.Close()
+					_ = rs.Body.Close()
 					if cerr == nil {
 						cancelAttempt()
 						return
@@ -1163,10 +1202,7 @@ func downloadMultipart(ctx context.Context, httpc *http.Client, token string, jo
 				}
 			}
 
-			select {
-			case errCh <- lastErr:
-			default:
-			}
+			partErr = lastErr
 		}()
 	}
 
@@ -1274,13 +1310,13 @@ func assembleParts(ctx context.Context, out string, parts []string, onProgress f
 	for _, p := range parts {
 		in, err := os.Open(p)
 		if err != nil {
-			f.Close()
+			_ = f.Close() // the caller removes the incomplete output
 			return err
 		}
 		n, err := copyCtx(ctx, f, in, func(done int64) { onProgress(base + done) })
-		in.Close()
+		_ = in.Close()
 		if err != nil {
-			f.Close()
+			_ = f.Close() // the caller removes the incomplete output
 			return err
 		}
 		base += n

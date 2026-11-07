@@ -76,23 +76,9 @@ Examples:
 					if !hfdownloader.IsValidModelName(repo) {
 						return fmt.Errorf("invalid repo id %q (expected owner/name)", repo)
 					}
-					repoType := hfdownloader.RepoTypeModel
-					if isDataset {
-						repoType = hfdownloader.RepoTypeDataset
-					}
-					rd, err := cache.Repo(repo, repoType)
+					rd, err := lookupCachedRepo(cache, repo, isDataset)
 					if err != nil {
 						return err
-					}
-					if !isDataset {
-						// Fall back to a cached dataset of that name.
-						if _, err := os.Stat(rd.Path()); os.IsNotExist(err) && !rd.IsFlat() {
-							if ds, err := cache.Repo(repo, hfdownloader.RepoTypeDataset); err == nil {
-								if _, err := os.Stat(ds.Path()); err == nil || ds.IsFlat() {
-									rd = ds
-								}
-							}
-						}
 					}
 					repos = append(repos, rd)
 				}
@@ -131,11 +117,11 @@ Examples:
 						fmt.Printf("  Deleted %d other cached revision(s)\n", len(res.DroppedRevisions))
 					}
 				case errors.As(err, &other):
-					fmt.Fprintf(os.Stderr, "Skipped %s: %v; pass --yes to flatten it anyway\n", rd.RepoID(), err)
+					_, _ = fmt.Fprintf(os.Stderr, "Skipped %s: %v; pass --yes to flatten it anyway\n", rd.RepoID(), err)
 				case errors.Is(err, hfdownloader.ErrAlreadyFlat):
 					fmt.Printf("Already flat: %s (%s)\n", rd.RepoID(), rd.FriendlyPath())
 				default:
-					fmt.Fprintf(os.Stderr, "Failed %s: %v\n", rd.RepoID(), err)
+					_, _ = fmt.Fprintf(os.Stderr, "Failed %s: %v\n", rd.RepoID(), err)
 				}
 			}
 			if ro.JSONOut {

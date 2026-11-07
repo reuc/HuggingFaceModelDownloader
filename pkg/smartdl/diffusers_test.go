@@ -135,7 +135,7 @@ func TestAnalyzeDiffusers(t *testing.T) {
 	})
 
 	t.Run("empty metadata", func(t *testing.T) {
-		files := []FileInfo{}
+		var files []FileInfo
 		metadata := map[string]interface{}{}
 
 		info := analyzeDiffusers(files, metadata)
@@ -430,6 +430,27 @@ func TestCalculateDownloadSize(t *testing.T) {
 		size := CalculateDownloadSize(info, files, []string{"vae"}, "")
 		if size != 300000000 {
 			t.Errorf("size = %d, expected 300000000", size)
+		}
+	})
+
+	t.Run("variant skips other variants", func(t *testing.T) {
+		files := []FileInfo{
+			{Path: "unet/model.fp16.safetensors", Name: "model.fp16.safetensors", Size: 10},
+			{Path: "unet/model.bf16.safetensors", Name: "model.bf16.safetensors", Size: 20},
+			{Path: "unet/model_fp32.safetensors", Name: "model_fp32.safetensors", Size: 40},
+			{Path: "unet/config.json", Name: "config.json", Size: 1},
+		}
+		for _, tt := range []struct {
+			variant string
+			want    int64
+		}{
+			{"", 71},     // no variant: everything
+			{"fp16", 11}, // fp16 weights + the unmarked config
+			{"BF16", 21}, // matched case-insensitively
+		} {
+			if got := CalculateDownloadSize(info, files, []string{"unet"}, tt.variant); got != tt.want {
+				t.Errorf("variant %q: size = %d, want %d", tt.variant, got, tt.want)
+			}
 		}
 	})
 }

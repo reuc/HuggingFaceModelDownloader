@@ -4,6 +4,7 @@
 package cli
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -42,7 +43,7 @@ func Execute(version string) error {
 
 	root := newRootCmd(ctx, version)
 	if err := root.ExecuteContext(ctx); err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
+		_, _ = fmt.Fprintln(os.Stderr, "error:", err)
 		var re *resumableError
 		if errors.As(err, &re) {
 			resumeHint(os.Stderr, re.id)
@@ -138,7 +139,7 @@ func newDownloadCmd(ctx context.Context, ro *RootOpts) *cobra.Command {
 					return err
 				}
 				if w := hfdownloader.UnmatchedFiltersWarning(finalJob, p); w != "" {
-					fmt.Fprintf(os.Stderr, "warning: %s\n", w)
+					_, _ = fmt.Fprintf(os.Stderr, "warning: %s\n", w)
 				}
 				if strings.ToLower(planFmt) == "json" || ro.JSONOut {
 					enc := json.NewEncoder(os.Stdout)
@@ -301,7 +302,7 @@ func finalize(cmd *cobra.Command, ro *RootOpts, args []string, job *hfdownloader
 }
 
 // buildCommandString reconstructs the CLI command from flags, excluding sensitive data.
-func buildCommandString(cmd *cobra.Command, job hfdownloader.Job, cfg hfdownloader.Settings) string {
+func buildCommandString(_ *cobra.Command, job hfdownloader.Job, cfg hfdownloader.Settings) string {
 	var parts []string
 	parts = append(parts, "hfdownloader", "download", job.Repo)
 
@@ -443,13 +444,18 @@ func applySettingsDefaults(cmd *cobra.Command, ro *RootOpts, dst *hfdownloader.S
 			set(fmt.Sprint(v))
 		}
 	}
+	// intErr is the first config value setInt couldn't parse as a number.
+	var intErr error
 	setInt := func(flagName string, set func(int)) {
-		if cmd.Flags().Changed(flagName) {
+		if intErr != nil || cmd.Flags().Changed(flagName) {
 			return
 		}
 		if v, ok := cfg[flagName]; ok && v != nil {
 			var x int
-			fmt.Sscan(fmt.Sprint(v), &x)
+			if _, err := fmt.Sscan(fmt.Sprint(v), &x); err != nil {
+				intErr = fmt.Errorf("invalid %s %q in config file %s: %w", flagName, fmt.Sprint(v), path, err)
+				return
+			}
 			set(x)
 		}
 	}
@@ -467,6 +473,9 @@ func applySettingsDefaults(cmd *cobra.Command, ro *RootOpts, dst *hfdownloader.S
 	setStr("link-mode", func(v string) { dst.LinkMode = v })
 	setStr("endpoint", func(v string) { dst.Endpoint = v })
 	setStr("flatten", func(v string) { dst.Flatten = v == "true" })
+	if intErr != nil {
+		return intErr
+	}
 
 	if !cmd.Flags().Changed("token") && os.Getenv("HF_TOKEN") == "" {
 		if v, ok := cfg["token"]; ok && v != nil {
@@ -530,7 +539,7 @@ func splitComma(s string) []string {
 }
 
 // cliProgress returns a simple text-based progress handler.
-func cliProgress(ro *RootOpts, job hfdownloader.Job) hfdownloader.ProgressFunc {
+func cliProgress(_ *RootOpts, job hfdownloader.Job) hfdownloader.ProgressFunc {
 	var mu sync.Mutex
 	announced := map[string]struct{}{}
 	return func(ev hfdownloader.ProgressEvent) {
@@ -565,9 +574,9 @@ func cliProgress(ro *RootOpts, job hfdownloader.Job) hfdownloader.ProgressFunc {
 				fmt.Printf("done: %s\n", ev.Path)
 			}
 		case "error":
-			fmt.Fprintf(os.Stderr, "error: %s\n", ev.Message)
+			_, _ = fmt.Fprintf(os.Stderr, "error: %s\n", ev.Message)
 		case "warning":
-			fmt.Fprintf(os.Stderr, "warning: %s\n", ev.Message)
+			_, _ = fmt.Fprintf(os.Stderr, "warning: %s\n", ev.Message)
 		case "done":
 			fmt.Println(ev.Message)
 		}
@@ -614,8 +623,11 @@ func confirmCopyOnlyCache(cmd *cobra.Command, ro *RootOpts, cfg *hfdownloader.Se
 	fmt.Println("  [c] Copy into the HF cache anyway (Python/HF tools find the files)")
 	fmt.Println("  [l] Cancel, and use --local-dir <folder> for plain files instead")
 	fmt.Print("Choose [c/l]: ")
-	var answer string
-	fmt.Scanln(&answer)
+	// Consume the whole line, so extra words aren't left in the terminal's input.
+	answer, err := bufio.NewReader(os.Stdin).ReadString('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		return fmt.Errorf("read answer: %w", err)
+	}
 	if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(answer)), "c") {
 		return fmt.Errorf("cancelled: re-run with --local-dir <folder> to save plain files, or --link-mode copy")
 	}

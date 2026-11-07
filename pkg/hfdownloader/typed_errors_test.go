@@ -38,8 +38,8 @@ func TestVerifyDownloaded_KnownSHA(t *testing.T) {
 	bad := it
 	bad.SHA256 = strings.Repeat("0", 64)
 	err = verifyDownloaded(context.Background(), nil, Settings{Verify: "none"}, bad, bad, f, "a.bin")
-	var ve *VerificationError
-	if !errors.As(err, &ve) {
+	ve, ok := errors.AsType[*VerificationError](err)
+	if !ok {
 		t.Fatalf("want *VerificationError, got %T (%v)", err, err)
 	}
 	if ve.Method != "sha256" || ve.Path != "a.bin" {
@@ -63,8 +63,7 @@ func TestVerifyDownloaded_SizeAndNone(t *testing.T) {
 
 	wrong := PlanItem{RelativePath: "b.txt", Size: 99}
 	err := verifyDownloaded(context.Background(), nil, Settings{Verify: "size"}, wrong, wrong, f, "b.txt")
-	var ve *VerificationError
-	if !errors.As(err, &ve) || ve.Method != "size" {
+	if ve, isVE := errors.AsType[*VerificationError](err); !isVE || ve.Method != "size" {
 		t.Fatalf("want size *VerificationError, got %T (%v)", err, err)
 	}
 
@@ -110,8 +109,7 @@ func TestVerifyDownloaded_EtagModeUsesServerHash(t *testing.T) {
 		t.Fatal(err)
 	}
 	err = verifyDownloaded(context.Background(), srv.Client(), Settings{Verify: "etag"}, it, it, f, "c.bin")
-	var ve *VerificationError
-	if !errors.As(err, &ve) || ve.Method != "etag" {
+	if ve, ok := errors.AsType[*VerificationError](err); !ok || ve.Method != "etag" {
 		t.Fatalf("etag verify should fail with an etag *VerificationError on a same-size corruption, got %T (%v)", err, err)
 	}
 }
@@ -149,8 +147,7 @@ func TestDownloadError_Unwrap(t *testing.T) {
 	if !errors.Is(de, ErrNotFound) {
 		t.Error("DownloadError should unwrap to its APIError cause (ErrNotFound)")
 	}
-	var ae *APIError
-	if !errors.As(de, &ae) || ae.StatusCode != 404 {
-		t.Errorf("errors.As to *APIError failed: %+v", ae)
+	if ae, ok := errors.AsType[*APIError](de); !ok || ae.StatusCode != 404 {
+		t.Errorf("errors.AsType to *APIError failed: %+v", ae)
 	}
 }

@@ -43,9 +43,11 @@ func ParseLinkMode(s string) (LinkMode, error) {
 // so auto mode doesn't retry a symlink for every file on Windows.
 var linkFallbacks sync.Map // root+"|"+kind -> struct{}
 
-// LinkNotice, when set, is called once per root the first time auto mode
-// falls back from symlinks (e.g. Windows without Developer Mode).
-var LinkNotice = func(msg string) { fmt.Fprintln(os.Stderr, "[INFO] "+msg) }
+// LinkNotice is called once per root the first time auto mode falls back
+// from symlinks (e.g. Windows without Developer Mode). By default it prints
+// the message to stderr; replace it to redirect the message, or set it to
+// nil to silence it.
+var LinkNotice = func(msg string) { _, _ = fmt.Fprintln(os.Stderr, "[INFO] "+msg) }
 
 var noticeOnce sync.Map
 
@@ -76,11 +78,11 @@ func placeLink(src, dst, symlinkTarget, root string, mode LinkMode) (LinkMode, e
 		case LinkSymlink:
 			return symlinkFn(symlinkTarget, dst)
 		case LinkHardlink:
-			real, err := filepath.EvalSymlinks(src)
+			resolved, err := filepath.EvalSymlinks(src)
 			if err != nil {
 				return err
 			}
-			return hardlinkFn(real, dst)
+			return hardlinkFn(resolved, dst)
 		default:
 			return CopyFileStream(src, dst)
 		}
@@ -102,7 +104,7 @@ func placeLink(src, dst, symlinkTarget, root string, mode LinkMode) (LinkMode, e
 		err := try(kind)
 		if err == nil {
 			if kind != LinkSymlink {
-				if _, done := noticeOnce.LoadOrStore(root, struct{}{}); !done {
+				if _, done := noticeOnce.LoadOrStore(root, struct{}{}); !done && LinkNotice != nil {
 					if kind == LinkHardlink {
 						LinkNotice("symlinks are not available here; using hardlinks instead (real files, no extra disk space)")
 					} else {
@@ -127,7 +129,7 @@ func LinkSupport(dir string) (symlink, hardlink bool) {
 	if err != nil {
 		return false, false
 	}
-	defer os.RemoveAll(probe)
+	defer func() { _ = os.RemoveAll(probe) }() // best effort: nothing to report it to
 	src := filepath.Join(probe, "src")
 	if err := os.WriteFile(src, []byte("x"), 0o644); err != nil {
 		return false, false

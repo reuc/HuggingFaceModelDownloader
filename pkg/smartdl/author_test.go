@@ -19,26 +19,26 @@ func TestListAuthor(t *testing.T) {
 		switch r.URL.Path {
 		case "/api/models":
 			if r.URL.Query().Get("author") != "acme" {
-				w.Write([]byte(`[]`))
+				_, _ = w.Write([]byte(`[]`))
 				return
 			}
 			if r.URL.Query().Get("cursor") == "" {
 				// Page 1 links page 2; a foreign-host link must not be followed.
 				w.Header().Set("Link", fmt.Sprintf(`<%s/api/models?author=acme&cursor=p2>; rel="next"`, srvURL))
-				w.Write([]byte(`[{"id":"acme/llm","gated":"manual","safetensors":{"parameters":{"BF16":7000000000},"total":7000000000},
+				_, _ = w.Write([]byte(`[{"id":"acme/llm","gated":"manual","safetensors":{"parameters":{"BF16":7000000000},"total":7000000000},
 					"config":{"architectures":["LlamaForCausalLM"]}}]`))
 				return
 			}
 			w.Header().Set("Link", `<https://evil.example/api/models?cursor=p3>; rel="next"`)
-			w.Write([]byte(`[{"id":"acme/llm-GGUF","gated":false,"gguf":{"total":7000000000,"architecture":"llama","context_length":8192}}]`))
+			_, _ = w.Write([]byte(`[{"id":"acme/llm-GGUF","gated":false,"gguf":{"total":7000000000,"architecture":"llama","context_length":8192}}]`))
 		case "/api/datasets":
 			if r.URL.Query().Get("author") != "acme" {
-				w.Write([]byte(`[]`))
+				_, _ = w.Write([]byte(`[]`))
 				return
 			}
-			w.Write([]byte(`[{"id":"acme/data","private":true,"downloads":5}]`))
+			_, _ = w.Write([]byte(`[{"id":"acme/data","private":true,"downloads":5}]`))
 		case "/api/users/empty/overview":
-			w.Write([]byte(`{}`))
+			_, _ = w.Write([]byte(`{}`))
 		default:
 			http.NotFound(w, r)
 		}

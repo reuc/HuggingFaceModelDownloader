@@ -6,6 +6,8 @@ package hfdownloader
 import (
 	"testing"
 	"time"
+
+	"github.com/reuc/HuggingFaceModelDownloader/internal/testutil"
 )
 
 func TestDefaultSettings(t *testing.T) {
@@ -195,7 +197,7 @@ func TestSettings_ProxyConfig(t *testing.T) {
 			Proxy: &ProxyConfig{
 				URL:      "http://proxy:8080",
 				Username: "user",
-				Password: "pass",
+				Password: testutil.Secret(""),
 			},
 		}
 		if cfg.Proxy == nil {
@@ -211,11 +213,17 @@ func TestSettings_ProxyConfig(t *testing.T) {
 }
 
 func TestRepoType_Constants(t *testing.T) {
-	if RepoTypeModel != "model" {
-		t.Errorf("RepoTypeModel = %q, want 'model'", RepoTypeModel)
-	}
-	if RepoTypeDataset != "dataset" {
-		t.Errorf("RepoTypeDataset = %q, want 'dataset'", RepoTypeDataset)
+	// The values are wire/on-disk strings; pin them so a rename can't change them.
+	for _, tc := range []struct {
+		name      string
+		got, want string
+	}{
+		{"RepoTypeModel", string(RepoTypeModel), "model"},
+		{"RepoTypeDataset", string(RepoTypeDataset), "dataset"},
+	} {
+		if tc.got != tc.want {
+			t.Errorf("%s = %q, want %q", tc.name, tc.got, tc.want)
+		}
 	}
 }
 

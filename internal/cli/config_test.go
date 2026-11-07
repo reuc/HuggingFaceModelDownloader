@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/reuc/HuggingFaceModelDownloader/internal/testutil"
 )
 
 func TestDefaultConfig(t *testing.T) {
@@ -45,13 +47,9 @@ func TestDefaultConfig(t *testing.T) {
 }
 
 func TestLoadConfigMap_NoConfigFile(t *testing.T) {
-	// Save original HOME and restore after test
-	origHome := os.Getenv("HOME")
-	defer os.Setenv("HOME", origHome)
-
 	// Use temp dir with no config file
 	tmpDir := t.TempDir()
-	os.Setenv("HOME", tmpDir)
+	t.Setenv("HOME", tmpDir)
 
 	cfg := loadConfigMap()
 	if cfg != nil {
@@ -60,11 +58,8 @@ func TestLoadConfigMap_NoConfigFile(t *testing.T) {
 }
 
 func TestLoadConfigMap_JSONConfig(t *testing.T) {
-	origHome := os.Getenv("HOME")
-	defer os.Setenv("HOME", origHome)
-
 	tmpDir := t.TempDir()
-	os.Setenv("HOME", tmpDir)
+	t.Setenv("HOME", tmpDir)
 
 	// Create config directory
 	configDir := filepath.Join(tmpDir, ".config")
@@ -74,10 +69,11 @@ func TestLoadConfigMap_JSONConfig(t *testing.T) {
 
 	// Write JSON config
 	configPath := filepath.Join(configDir, "hfdownloader.json")
+	token := testutil.Secret("hf_")
 	configData := map[string]any{
 		"cache-dir":   "/custom/cache",
 		"connections": 16,
-		"token":       "hf_test_token",
+		"token":       token,
 	}
 	data, _ := json.Marshal(configData)
 	if err := os.WriteFile(configPath, data, 0o644); err != nil {
@@ -95,17 +91,14 @@ func TestLoadConfigMap_JSONConfig(t *testing.T) {
 	if v, ok := cfg["connections"].(float64); !ok || v != 16 {
 		t.Errorf("connections = %v, want 16", cfg["connections"])
 	}
-	if v, ok := cfg["token"].(string); !ok || v != "hf_test_token" {
-		t.Errorf("token = %v, want hf_test_token", cfg["token"])
+	if v, ok := cfg["token"].(string); !ok || v != token {
+		t.Errorf("token = %v, want %s", cfg["token"], token)
 	}
 }
 
 func TestLoadConfigMap_YAMLConfig(t *testing.T) {
-	origHome := os.Getenv("HOME")
-	defer os.Setenv("HOME", origHome)
-
 	tmpDir := t.TempDir()
-	os.Setenv("HOME", tmpDir)
+	t.Setenv("HOME", tmpDir)
 
 	configDir := filepath.Join(tmpDir, ".config")
 	if err := os.MkdirAll(configDir, 0o755); err != nil {
@@ -138,11 +131,8 @@ func TestLoadConfigMap_YAMLConfig(t *testing.T) {
 }
 
 func TestLoadConfigMap_JSONPrecedence(t *testing.T) {
-	origHome := os.Getenv("HOME")
-	defer os.Setenv("HOME", origHome)
-
 	tmpDir := t.TempDir()
-	os.Setenv("HOME", tmpDir)
+	t.Setenv("HOME", tmpDir)
 
 	configDir := filepath.Join(tmpDir, ".config")
 	if err := os.MkdirAll(configDir, 0o755); err != nil {
@@ -156,8 +146,8 @@ func TestLoadConfigMap_JSONPrecedence(t *testing.T) {
 	jsonData, _ := json.Marshal(map[string]any{"cache-dir": "/json/path"})
 	yamlData, _ := yaml.Marshal(map[string]any{"cache-dir": "/yaml/path"})
 
-	os.WriteFile(jsonPath, jsonData, 0o644)
-	os.WriteFile(yamlPath, yamlData, 0o644)
+	testutil.WriteFile(t, jsonPath, jsonData, 0o644)
+	testutil.WriteFile(t, yamlPath, yamlData, 0o644)
 
 	cfg := loadConfigMap()
 	if cfg == nil {
@@ -170,18 +160,15 @@ func TestLoadConfigMap_JSONPrecedence(t *testing.T) {
 }
 
 func TestLoadConfigMap_InvalidJSON(t *testing.T) {
-	origHome := os.Getenv("HOME")
-	defer os.Setenv("HOME", origHome)
-
 	tmpDir := t.TempDir()
-	os.Setenv("HOME", tmpDir)
+	t.Setenv("HOME", tmpDir)
 
 	configDir := filepath.Join(tmpDir, ".config")
-	os.MkdirAll(configDir, 0o755)
+	testutil.MkdirAll(t, configDir, 0o755)
 
 	// Write invalid JSON
 	configPath := filepath.Join(configDir, "hfdownloader.json")
-	os.WriteFile(configPath, []byte("{ invalid json }"), 0o644)
+	testutil.WriteFile(t, configPath, []byte("{ invalid json }"), 0o644)
 
 	cfg := loadConfigMap()
 	if cfg != nil {
@@ -190,18 +177,15 @@ func TestLoadConfigMap_InvalidJSON(t *testing.T) {
 }
 
 func TestLoadConfigMap_InvalidYAML(t *testing.T) {
-	origHome := os.Getenv("HOME")
-	defer os.Setenv("HOME", origHome)
-
 	tmpDir := t.TempDir()
-	os.Setenv("HOME", tmpDir)
+	t.Setenv("HOME", tmpDir)
 
 	configDir := filepath.Join(tmpDir, ".config")
-	os.MkdirAll(configDir, 0o755)
+	testutil.MkdirAll(t, configDir, 0o755)
 
 	// Write invalid YAML
 	configPath := filepath.Join(configDir, "hfdownloader.yaml")
-	os.WriteFile(configPath, []byte("invalid: yaml: content: ["), 0o644)
+	testutil.WriteFile(t, configPath, []byte("invalid: yaml: content: ["), 0o644)
 
 	cfg := loadConfigMap()
 	if cfg != nil {
