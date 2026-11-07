@@ -18,7 +18,6 @@ import (
 
 // gitBlobOID is the git blob id the Hub reports as a file's "oid".
 func gitBlobOID(data []byte) string {
-	// deepcode ignore InsecureHash/test: computes a git blob id (SHA-1 by definition) for a test fixture
 	h := sha1.New()
 	fmt.Fprintf(h, "blob %d\x00", len(data))
 	h.Write(data)

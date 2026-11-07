@@ -160,7 +160,6 @@ func buildHTTPProxyClient(proxyCfg *ProxyConfig) (*http.Client, error) {
 
 		// Handle TLS settings for HTTPS proxy
 		if proxyCfg.InsecureSkipVerify {
-			// deepcode ignore TooPermissiveTrustManager: opt-in for TLS-intercepting corporate proxies (proxy.insecure_skip_verify); off by default and can't be enabled through the server API
 			tr.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 		}
 	} else if proxyCfg != nil && proxyCfg.NoEnvProxy {
@@ -233,7 +232,6 @@ func buildSOCKS5Client(proxyCfg *ProxyConfig) (*http.Client, error) {
 	}
 
 	if proxyCfg.InsecureSkipVerify {
-		// deepcode ignore TooPermissiveTrustManager: opt-in for TLS-intercepting corporate proxies (proxy.insecure_skip_verify); off by default and can't be enabled through the server API
 		tr.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 	}
 

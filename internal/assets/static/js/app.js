@@ -239,7 +239,7 @@
     const remaining = files.length - 20;
     const moreFiles = remaining > 0
       ? `<button type="button" class="analysis-file analysis-files-toggle" onclick="toggleAnalysisFilesExpanded()">
-           ${expanded ? 'Show fewer files' : `... and ${remaining} more files (click to show all)`}
+           ${expanded ? 'Show fewer files' : `... and ${escapeHtml(remaining)} more files (click to show all)`}
          </button>`
       : '';
 
@@ -396,7 +396,7 @@
                 ${escapeHtml(t.name)}
               </button>
             `).join('')}
-            ${tags.length > 10 ? `<div class="ref-more">... and ${tags.length - 10} more tags</div>` : ''}
+            ${tags.length > 10 ? `<div class="ref-more">... and ${escapeHtml(tags.length - 10)} more tags</div>` : ''}
           </div>
         </div>
       `;
@@ -680,7 +680,6 @@
       ? `<button class="btn-link" onclick="showRevisionPickerFromAnalysis()">change</button>`
       : '';
 
-    // deepcode ignore DOMXSS: every remote value in this card is passed through escapeHtml/jsArg (related downloads included); the rest are constant strings
     resultDiv.innerHTML = `
       <div class="analysis-card">
         <div class="analysis-header">
@@ -1455,7 +1454,7 @@
       const filesHtml = data.files?.map(f => `
         <div class="analysis-file">
           <span class="analysis-file-name">${escapeHtml(f.path)}</span>
-          <span class="analysis-file-size">${formatBytes(f.size)}</span>
+          <span class="analysis-file-size">${escapeHtml(formatBytes(f.size))}</span>
         </div>
       `).join('') || '<p>No files found</p>';
 
@@ -2082,7 +2081,7 @@
     const remaining = files.length - 20;
     const moreFiles = remaining > 0
       ? `<button type="button" class="cache-files-more" onclick="toggleCacheDetailFilesExpanded()">
-           ${expanded ? 'Show fewer files' : `... and ${remaining} more files (click to show all)`}
+           ${expanded ? 'Show fewer files' : `... and ${escapeHtml(remaining)} more files (click to show all)`}
          </button>`
       : '';
 
@@ -2769,7 +2768,6 @@
       `;
     }
 
-    // deepcode ignore DOMXSS: every target field is passed through escapeHtml/jsArg; the rest are constant strings
     container.innerHTML = html;
   }
 
@@ -2997,7 +2995,7 @@
     }
 
     // Render the diff items
-    const typeIcon = (type) => type === 'model'
+    const typeIcon = (isModel) => isModel
       ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
          </svg>`
@@ -3011,7 +3009,7 @@
         case 'missing': return 'To Push';
         case 'extra': return 'Extra';
         case 'outdated': return 'Outdated';
-        default: return escapeHtml(status);
+        default: return status;
       }
     };
 
@@ -3026,10 +3024,10 @@
       ${diffs.map(d => `
         <div class="diff-item">
           <div>
-            <span class="diff-item-status ${escapeHtml(d.status)}">${statusLabel(d.status)}</span>
+            <span class="diff-item-status ${escapeHtml(d.status)}">${escapeHtml(statusLabel(d.status))}</span>
           </div>
           <div class="diff-item-type">
-            ${typeIcon(d.type)}
+            ${typeIcon(d.type === 'model')}
             ${escapeHtml(d.type)}
           </div>
           <div class="diff-item-repo">${escapeHtml(d.repo)}</div>
@@ -3275,12 +3273,11 @@
         <div class="related-downloads">`;
 
     downloads.forEach(dl => {
-      const requiredBadge = dl.required ? '<span class="badge-required">Required</span>' : '';
 
       html += `
         <div class="related-download-card ${dl.required ? 'required' : ''}">
           <div class="related-download-info">
-            <span class="related-download-label">${escapeHtml(dl.label)} ${requiredBadge}</span>
+            <span class="related-download-label">${escapeHtml(dl.label)} ${dl.required ? '<span class="badge-required">Required</span>' : ''}</span>
             <span class="related-download-repo">${escapeHtml(dl.repo)}</span>
             ${dl.description ? `<span class="related-download-desc">${escapeHtml(dl.description)}</span>` : ''}
             ${dl.size_human ? `<span class="related-download-size">${escapeHtml(dl.size_human)}</span>` : ''}
