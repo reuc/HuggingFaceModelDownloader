@@ -159,7 +159,8 @@ type Settings struct {
 	// content hash in the plan. Any file with a known SHA256 — every LFS file,
 	// plus any a mirror annotates — is ALWAYS verified by SHA-256 regardless of
 	// this setting. (This also covers every multipart download, since range
-	// requests are only used for LFS files.)
+	// requests are only used for LFS files.) Likewise, a non-LFS file whose
+	// git blob id the Hub reports is always checked against it.
 	//
 	// Options:
 	//   - "none":   No extra verification (fastest)

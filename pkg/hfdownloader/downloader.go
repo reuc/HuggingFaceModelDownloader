@@ -796,13 +796,18 @@ func partsBytes(parts []string) int64 {
 }
 
 // blobTempName names the temp file an item downloads into inside blobs/.
-// Items with a known content hash use it (stable across runs, so resumes find
-// their partial data). Others use a hash of the repo path: flattening the path
-// itself let distinct files collide (a/b_c.json vs a_b/c.json) and broke on
-// long paths.
+// Items with a known content hash (LFS SHA256, or the git blob id of a
+// non-LFS file) use it: stable across runs, so resumes find their partial
+// data, and specific to one version of the file, so a partial left before the
+// branch moved is never continued with the bytes of a newer version. Others
+// use a hash of the repo path: flattening the path itself let distinct files
+// collide (a/b_c.json vs a_b/c.json) and broke on long paths.
 func blobTempName(it PlanItem) string {
 	if it.SHA256 != "" {
 		return "tmp-" + it.SHA256
+	}
+	if validGitOID(it.GitOID) {
+		return "tmp-oid-" + strings.ToLower(it.GitOID)
 	}
 	sum := sha256.Sum256([]byte(it.RelativePath))
 	return "tmp-path-" + hex.EncodeToString(sum[:16])

@@ -41,6 +41,16 @@ func verifyDownloadedProgress(ctx context.Context, httpc *http.Client, cfg Setti
 	if it.SHA256 != "" {
 		return checkSHA256(ctx, dst, it.SHA256, relPath, "sha256", onProgress)
 	}
+	// A non-LFS file's git blob id is a content hash too, so it is always
+	// checked: bytes of two versions of a file (a partial from an attempt
+	// before the branch moved, continued with the new version) have the
+	// right size but must not be kept.
+	if it.GitOID != "" {
+		if !matchesGitOID(dst, it.GitOID) {
+			return &VerificationError{Path: relPath, Expected: it.GitOID, Actual: "different content", Method: "git blob id"}
+		}
+		return nil
+	}
 
 	switch cfg.Verify {
 	case "none":
