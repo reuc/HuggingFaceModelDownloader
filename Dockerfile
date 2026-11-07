@@ -62,8 +62,10 @@
 # =============================================================================
 # Build stage: wolfi-polyglot distroless. It runs on the build platform and
 # cross-compiles, so multi-arch builds don't emulate the Go compiler.
+# Published, signed and SLSA-attested by github.com/reuc/wolfi-polyglot; verify
+# with: gh attestation verify oci://<image>@<digest> -R reuc/wolfi-polyglot
 # =============================================================================
-FROM --platform=$BUILDPLATFORM docker.io/reuc/wolfi-polyglot:latest-distroless AS build
+FROM --platform=$BUILDPLATFORM docker.io/reuc/wolfi-polyglot:20261107-distroless@sha256:917ed6d9eca1ffc9b928f37ef9fc1a640b905456325cdcfb5646fd31faad6c98 AS build
 
 ARG TARGETOS
 ARG TARGETARCH
