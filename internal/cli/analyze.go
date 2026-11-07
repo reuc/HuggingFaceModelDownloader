@@ -226,12 +226,9 @@ func runInteractiveSelector(ctx context.Context, info *smartdl.RepoInfo, ro *Roo
 			}
 		}
 
-		// Use live TUI for download progress
-		ui := tui.NewLiveRenderer(job, cfg)
-		defer ui.Close()
-		progress := ui.Handler()
-
-		return hfdownloader.Download(ctx, job, cfg, progress)
+		// Recorded like any CLI download, so `hfdownloader resume` can
+		// continue it if it fails or is interrupted.
+		return runDownload(ctx, ro, job, cfg)
 
 	case "copy":
 		fmt.Printf("\nCommand copied to clipboard:\n  %s\n", result.CLICommand)

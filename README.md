@@ -176,7 +176,13 @@ hfdownloader download TheBloke/Mistral-7B-Instruct-v0.2-GGUF -F q4_k_m -E ".md,f
 ### Resume & Verify
 
 ```bash
-# Interrupted? Just run again - automatically resumes
+# Failed or interrupted (network error, Ctrl+C, crash, reboot)? Resume it -
+# same repo, filters, destination and settings; partial files continue
+# where they stopped
+hfdownloader resume            # the failed/interrupted download
+hfdownloader resume --list     # several? list them, then: resume <ID> or --all
+
+# Running the same command again also resumes
 hfdownloader download owner/repo
 
 # Branch updated upstream? Run again - only new or changed files are

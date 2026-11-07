@@ -199,6 +199,15 @@ func TestBlobTempName(t *testing.T) {
 	if got := blobTempName(PlanItem{RelativePath: "m.gguf", SHA256: "abc"}); got != "tmp-abc" {
 		t.Errorf("hash-named temp = %q, want tmp-abc (stable for resume)", got)
 	}
+	// Non-LFS files are named per version by their git blob id.
+	v1 := blobTempName(PlanItem{RelativePath: "config.json", GitOID: gitBlobOID([]byte("v1"))})
+	v2 := blobTempName(PlanItem{RelativePath: "config.json", GitOID: gitBlobOID([]byte("v2"))})
+	if v1 == v2 || v1 != "tmp-oid-"+gitBlobOID([]byte("v1")) {
+		t.Errorf("git-oid temp names = %q, %q", v1, v2)
+	}
+	if got := blobTempName(PlanItem{RelativePath: "x", GitOID: "../../etc"}); strings.Contains(got, "..") {
+		t.Errorf("an invalid oid reached the temp name: %q", got)
+	}
 }
 
 func TestValidate_StallTimeout(t *testing.T) {
