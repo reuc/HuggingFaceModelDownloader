@@ -552,6 +552,24 @@ Get from [Releases](https://github.com/reuc/HuggingFaceModelDownloader/releases)
 | macOS | Intel | `hfdownloader_darwin_amd64_*` |
 | Windows | x86_64 | `hfdownloader_windows_amd64_*.exe` |
 
+#### Verify a download
+
+Each release has a `checksums.txt` with the SHA-256 of every binary. Releases built by the current release workflow also include SLSA provenance, `hfdownloader_<tag>.intoto.jsonl`. It proves a binary was built by this repository's release workflow from that tag, not uploaded by hand. Older releases don't have it.
+
+```bash
+TAG=v3.4.0   # the release you downloaded
+FILE=hfdownloader_linux_amd64_${TAG}
+
+# Checksum (macOS: shasum -a 256 -c)
+sha256sum --ignore-missing -c checksums.txt
+
+# Provenance (https://github.com/slsa-framework/slsa-verifier)
+slsa-verifier verify-artifact "$FILE" \
+  --provenance-path "hfdownloader_${TAG}.intoto.jsonl" \
+  --source-uri github.com/reuc/HuggingFaceModelDownloader \
+  --source-tag "$TAG"
+```
+
 ### Build from Source
 
 ```bash
