@@ -623,6 +623,24 @@ The SSH login runs as the same user as the app, so copied files keep the right o
 The container starts as root only to set up SSH, then drops to the `hfdownloader` user.
 SSH host keys are generated on first start in `/etc/ssh/keys`; mount a volume there to keep them across container re-creation.
 
+#### What's in the image
+
+The image is built on [Wolfi](https://github.com/wolfi-dev) and has no package manager:
+
+- **Build stage:** the distroless variant of [`wolfi-polyglot`](https://github.com/reuc/wolfi-polyglot), a Go toolchain with no shell, compiles a static `hfdownloader` for the target platform.
+- **Runtime:** an empty (`scratch`) image with only the Wolfi packages the container uses: busybox (for the entrypoint script and SSH sessions), OpenSSH, su-exec, the CA bundle and tzdata. There are no setuid binaries.
+- The app runs as `hfdownloader`, uid/gid **1000**. Give that id write access to mounted volumes, or run as another id with `--user` (SSH then stays off).
+
+Both base images are pinned by digest in the [`Dockerfile`](Dockerfile).
+
+To build against a local `wolfi-polyglot` instead of the published one, for example to test a change to it, override the build stage's image with a named build context. The name on the left must match the build stage's `FROM` reference exactly:
+
+```bash
+docker buildx build --load \
+  --build-context docker.io/reuc/wolfi-polyglot:<tag>-distroless@sha256:<digest>=docker-image://wolfi-polyglot:<local-tag>-distroless \
+  -t hfdownloader .
+```
+
 #### TrueNAS SCALE
 
 A ready-made app file is in [`deploy/truenas/hfdownloader.yaml`](deploy/truenas/hfdownloader.yaml).
