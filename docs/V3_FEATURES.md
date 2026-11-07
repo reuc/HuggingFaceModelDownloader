@@ -288,7 +288,7 @@ hfdownloader serve --endpoint https://hf-mirror.com
 
 ### Features
 
-- **Download Queue**: Start, pause, resume, and cancel downloads
+- **Download Queue**: Start, pause, resume, and cancel downloads; move a queued download to the top so it runs next
 - **Real-time Progress**: WebSocket-powered live updates
 - **Cache Browser**: View and manage downloaded models/datasets
 - **Mirror Management**: Configure targets and sync operations

@@ -172,7 +172,9 @@ Fields that are empty are omitted from job objects: `isDataset`, `filters`,
 directory in flat mode).
 
 The server downloads one job at a time; further jobs stay `queued` until the
-current one finishes.
+current one finishes. Queued jobs run in ascending `queueSeq` order; use
+[`POST /api/jobs/{id}/move-to-top`](#post-apijobsidmove-to-top) to make one
+the next download.
 
 **Response** `200 OK` (Existing job)
 
@@ -1081,6 +1083,28 @@ as another job that is queued or running (`details` names that job).
 curl -X POST http://localhost:8080/api/jobs/a1b2c3d4e5f6/retry
 ```
 
+#### POST /api/jobs/{id}/move-to-top
+
+Move a `queued` job to the top of the download queue (**Move to top** on the
+web UI's Active Jobs page), so it is the next one to download. The download
+that is running is not interrupted: the moved job starts as soon as it
+finishes, ahead of every other queued job, which keep their order. Moving the
+job that is already next changes nothing. The new order is saved with the job
+list, so it survives a restart.
+
+Clients that sort queued jobs by `queueSeq` see the new order: the moved job
+gets a `queueSeq` below every other queued job's (it can be `0`, and so
+omitted, or negative).
+
+Response `200 OK`: the moved job (same shape as `GET /api/jobs/{id}`).
+
+Errors: `404` for an unknown id; `409` if the job isn't `queued` (`details`
+gives its status).
+
+```bash
+curl -X POST http://localhost:8080/api/jobs/a1b2c3d4e5f6/move-to-top
+```
+
 ---
 
 ### Mirror
@@ -1310,7 +1334,7 @@ asyncio.run(monitor())
 | 401 | Unauthorized | Basic auth required/failed (plain-text body); also analyze/plan of a gated, private or unknown repo the Hub refuses to reveal |
 | 403 | Forbidden | Cross-origin browser request from an origin not allowed (see [CORS](#cors)) |
 | 404 | Not Found | Unknown job, target or cached repo; analyze/plan of a repo or revision that does not exist; cancel/pause/resume of a job in the wrong state |
-| 409 | Conflict | Dismissing a `queued`/`running` job; deleting a cached repo that has a `queued`/`running`/`paused` job |
+| 409 | Conflict | Dismissing a `queued`/`running` job; redownloading a job that isn't `failed`; moving a job that isn't `queued` to the top; deleting a cached repo that has a `queued`/`running`/`paused` job |
 | 500 | Server Error | Internal error (e.g. cache I/O failure) |
 | 502 | Bad Gateway | Analyze/plan: other upstream (Hub) errors |
 | 504 | Gateway Timeout | Analyze/plan: Hub request timed out |

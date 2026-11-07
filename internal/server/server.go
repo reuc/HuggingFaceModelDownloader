@@ -257,6 +257,7 @@ func (s *Server) registerAPIRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/jobs/{id}/resume", s.handleResumeJob)
 	mux.HandleFunc("POST /api/jobs/{id}/dismiss", s.handleDismissJob)
 	mux.HandleFunc("POST /api/jobs/{id}/retry", s.handleRetryJob)
+	mux.HandleFunc("POST /api/jobs/{id}/move-to-top", s.handleMoveJobToTop)
 
 	// Settings
 	mux.HandleFunc("GET /api/settings", s.handleGetSettings)

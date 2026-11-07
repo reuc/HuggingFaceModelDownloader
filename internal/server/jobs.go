@@ -46,8 +46,10 @@ type Job struct {
 	StartedAt  *time.Time        `json:"startedAt,omitempty"`
 	EndedAt    *time.Time        `json:"endedAt,omitempty"`
 	Files      []JobFileProgress `json:"files,omitempty"`
-	// QueueSeq increases every time the job is (re)queued, so sorting queued
-	// jobs by it gives the order they will be downloaded in.
+	// QueueSeq orders the queue: sorting queued jobs by it gives the order
+	// they will be downloaded in. A job gets the next, higher value every
+	// time it is (re)queued; moving it to the top of the queue gives it one
+	// below every other queued job, which can be zero or negative.
 	QueueSeq int64 `json:"queueSeq,omitempty"`
 
 	cancel     context.CancelFunc `json:"-"`
@@ -184,6 +186,48 @@ func (m *JobManager) enqueueLocked(id string) {
 		m.queueSeq++
 		j.QueueSeq = m.queueSeq
 	}
+}
+
+// moveToTopLocked moves id to the head of the run queue and gives it a
+// QueueSeq below every other queued job's, so clients sort it first too. It
+// reports whether anything changed: false when id is already the next job to
+// run, or when it is no longer in the queue because the scheduler has just
+// taken it to start. Must hold m.mu (write).
+func (m *JobManager) moveToTopLocked(id string) bool {
+	inQueue, isNext := false, false
+	var minSeq int64
+	haveOther := false
+	for _, qid := range m.queue {
+		j, ok := m.jobs[qid]
+		if !ok || j.Status != JobStatusQueued {
+			continue // stale entry the scheduler will skip
+		}
+		if qid == id {
+			if !inQueue && !haveOther {
+				isNext = true
+			}
+			inQueue = true
+			continue
+		}
+		if !haveOther || j.QueueSeq < minSeq {
+			minSeq = j.QueueSeq
+		}
+		haveOther = true
+	}
+	if !inQueue || isNext {
+		return false
+	}
+
+	queue := make([]string, 0, len(m.queue))
+	queue = append(queue, id)
+	for _, qid := range m.queue {
+		if qid != id {
+			queue = append(queue, qid)
+		}
+	}
+	m.queue = queue
+	m.jobs[id].QueueSeq = minSeq - 1
+	return true
 }
 
 // scheduleNextLocked starts the next queued job if no job is currently running.
@@ -430,6 +474,46 @@ func (m *JobManager) ResumeJob(id string) bool {
 	m.notifyListeners(snapshot)
 
 	return true
+}
+
+// MoveJobResult distinguishes the outcomes of a move-to-top attempt so the
+// HTTP layer can map them to status codes.
+type MoveJobResult int
+
+const (
+	// MoveJobOK means the job is now the next one to download (or already was).
+	MoveJobOK MoveJobResult = iota
+	// MoveJobNotFound means no job with that ID exists.
+	MoveJobNotFound
+	// MoveJobNotQueued means the job isn't waiting in the queue.
+	MoveJobNotQueued
+)
+
+// MoveJobToTop makes a queued job the next one to download ("Move to top" in
+// the web UI). The download that is running now is not interrupted: the moved
+// job starts as soon as it finishes, ahead of every other queued job. Moving
+// the job that is already next changes nothing.
+func (m *JobManager) MoveJobToTop(id string) (MoveJobResult, *Job) {
+	m.mu.Lock()
+	job, ok := m.jobs[id]
+	if !ok {
+		m.mu.Unlock()
+		return MoveJobNotFound, nil
+	}
+	if job.Status != JobStatusQueued {
+		snapshot := m.cloneJobLocked(job)
+		m.mu.Unlock()
+		return MoveJobNotQueued, snapshot
+	}
+	moved := m.moveToTopLocked(id)
+	snapshot := m.cloneJobLocked(job)
+	m.mu.Unlock()
+
+	if moved {
+		m.saveJobs()
+		m.notifyListeners(snapshot)
+	}
+	return MoveJobOK, snapshot
 }
 
 // sameDownload reports whether two jobs download the same selection: repo,

@@ -412,6 +412,26 @@ func (s *Server) handleRetryJob(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleMoveJobToTop makes a queued job the next one to download ("Move to
+// top" on the Active Jobs page) and returns it. The running download is not
+// interrupted.
+func (s *Server) handleMoveJobToTop(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "Missing job ID", "")
+		return
+	}
+
+	switch res, job := s.jobs.MoveJobToTop(id); res {
+	case MoveJobOK:
+		writeJSON(w, http.StatusOK, job)
+	case MoveJobNotQueued:
+		writeError(w, http.StatusConflict, "Only queued jobs can be moved to the top of the queue", "job is "+string(job.Status))
+	default:
+		writeError(w, http.StatusNotFound, "Job not found", "")
+	}
+}
+
 // handleGetSettings returns current settings.
 func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 	// Read a consistent snapshot so we never observe a field mid-update.

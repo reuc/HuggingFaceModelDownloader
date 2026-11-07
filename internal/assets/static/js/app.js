@@ -1533,7 +1533,12 @@
       `;
     }
     if (status === 'queued') {
-      return `<button class="btn btn-sm btn-danger" onclick="cancelJob(${id})">Cancel</button>`;
+      // renderJobList hides "Move to top" on the job that is already next.
+      return `
+          <button class="btn btn-sm btn-secondary" data-role="move-top" onclick="moveJobToTop(${id})"
+                  title="Download this model next, after the current download finishes">Move to top</button>
+          <button class="btn btn-sm btn-danger" onclick="cancelJob(${id})">Cancel</button>
+      `;
     }
     if (status === 'failed') {
       return `
@@ -1730,6 +1735,7 @@
 
     const seen = new Set();
     let prev = null;
+    let queueHeadSeen = false;
     for (const job of jobs) {
       seen.add(job.id);
       let el = cache.get(job.id);
@@ -1742,6 +1748,14 @@
       const want = prev ? prev.nextSibling : container.firstChild;
       if (el !== want) container.insertBefore(el, want);
       updateJobCard(el, job);
+      // jobs is sorted with the queue in run order, so the first queued
+      // job is the next to download: "Move to top" would do nothing there.
+      const moveBtn = el.querySelector('[data-role="move-top"]');
+      if (moveBtn) {
+        const isNext = job.status === 'queued' && !queueHeadSeen;
+        if (moveBtn.hidden !== isNext) moveBtn.hidden = isNext;
+      }
+      if (job.status === 'queued') queueHeadSeen = true;
       prev = el;
     }
 
@@ -1803,6 +1817,24 @@
       }
     } catch (e) {
       showToast(`Failed to resume: ${e.message}`, 'error');
+    }
+  };
+
+  // Move a queued job to the top of the queue so it downloads next. The
+  // download that is running now is not interrupted.
+  window.moveJobToTop = async function(jobId) {
+    try {
+      const job = await api('POST', `/jobs/${jobId}/move-to-top`);
+      // A WebSocket update may already have started the job; only apply
+      // this snapshot while it is still waiting.
+      const cur = state.jobs.get(jobId);
+      if (job && job.id && cur && cur.status === 'queued') {
+        state.jobs.set(jobId, job);
+      }
+      renderJobs();
+      showToast('Moved to the top of the queue', 'success');
+    } catch (e) {
+      showToast(`Failed to move: ${e.message}`, 'error');
     }
   };
 

@@ -1277,6 +1277,12 @@ a {
   gap: 12px;
 }
 
+/* .btn sets display, which would otherwise override the hidden attribute
+   ("Move to top" is hidden on the job that is already next). */
+.job-actions .btn[hidden] {
+  display: none;
+}
+
 .job-repo {
   font-size: 16px;
   font-weight: 600;
