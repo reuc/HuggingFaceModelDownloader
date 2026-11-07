@@ -68,7 +68,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /hfdownloader ./cmd/hf
 # =============================================================================
 # Final stage - minimal image
 # =============================================================================
-FROM alpine:3.19
+FROM alpine:3.20
 
 # Install ca-certificates for HTTPS, su-exec to drop root, and an optional
 # SSH/SFTP server (only started when SSH_ENABLE=true)
