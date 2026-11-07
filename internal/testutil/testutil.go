@@ -6,6 +6,7 @@
 package testutil
 
 import (
+	"crypto/rand"
 	"fmt"
 	"os"
 	"testing"
@@ -92,4 +93,12 @@ func Unsetenv(t testing.TB, key string) {
 	if err := os.Unsetenv(key); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// Secret returns prefix followed by a fresh random string, for use as a
+// password or token in a test, so that no test carries a hard-coded
+// credential. The random part is 26 characters from [A-Z2-7], which need no
+// escaping in a URL.
+func Secret(prefix string) string {
+	return prefix + rand.Text()
 }

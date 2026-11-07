@@ -6,6 +6,8 @@ package hfdownloader
 import (
 	"testing"
 	"time"
+
+	"github.com/reuc/HuggingFaceModelDownloader/internal/testutil"
 )
 
 func TestDefaultSettings(t *testing.T) {
@@ -195,7 +197,7 @@ func TestSettings_ProxyConfig(t *testing.T) {
 			Proxy: &ProxyConfig{
 				URL:      "http://proxy:8080",
 				Username: "user",
-				Password: "pass",
+				Password: testutil.Secret(""),
 			},
 		}
 		if cfg.Proxy == nil {

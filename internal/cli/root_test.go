@@ -32,8 +32,9 @@ func TestRootOpts(t *testing.T) {
 	})
 
 	t.Run("with values", func(t *testing.T) {
+		token := testutil.Secret("hf_")
 		ro := &RootOpts{
-			Token:    "test-token",
+			Token:    token,
 			JSONOut:  true,
 			Quiet:    true,
 			Verbose:  true,
@@ -41,7 +42,7 @@ func TestRootOpts(t *testing.T) {
 			LogFile:  "/path/to/log",
 			LogLevel: "debug",
 		}
-		if ro.Token != "test-token" {
+		if ro.Token != token {
 			t.Errorf("Token = %q", ro.Token)
 		}
 		if !ro.JSONOut {
@@ -191,8 +192,8 @@ func TestBuildCommandString(t *testing.T) {
 		cfg := defaultSettings()
 		cfg.Proxy = &hfdownloader.ProxyConfig{
 			URL:      "http://proxy:8080",
-			Username: "user", // Should be omitted
-			Password: "pass", // Should be omitted
+			Username: "user",              // Should be omitted
+			Password: testutil.Secret(""), // Should be omitted
 		}
 
 		cmd := buildCommandString(nil, job, cfg)

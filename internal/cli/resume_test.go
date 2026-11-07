@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/reuc/HuggingFaceModelDownloader/internal/testutil"
 	"github.com/reuc/HuggingFaceModelDownloader/pkg/hfdownloader"
 )
 
@@ -214,8 +215,9 @@ func TestResume_ContinuesFailedDownload(t *testing.T) {
 	store := defaultRecordStore()
 
 	// 1. The first attempt loses its connection partway through the weights.
+	token := testutil.Secret("hf_")
 	_, err := runCLI(ctx, "download", "o/r", "--cache-dir", cache, "--endpoint", srv.URL,
-		"-q", "--retries", "0", "-t", "hf_secret_test_token")
+		"-q", "--retries", "0", "-t", token)
 	id := mustResumable(t, err)
 
 	rec := store.load(id)
@@ -232,7 +234,7 @@ func TestResume_ContinuesFailedDownload(t *testing.T) {
 		t.Errorf("settings = %+v", rec.Settings)
 	}
 	raw, _ := os.ReadFile(filepath.Join(store.dir, id+".json"))
-	if bytes.Contains(raw, []byte("hf_secret_test_token")) {
+	if bytes.Contains(raw, []byte(token)) {
 		t.Fatal("the access token was written to the download record")
 	}
 	part1 := fileSize(t, partFile(cache, weights))
@@ -637,7 +639,7 @@ func TestRecordID(t *testing.T) {
 		"connections":    func(_ *hfdownloader.Job, s *hfdownloader.Settings) { s.Concurrency = 2 },
 		"retries":        func(_ *hfdownloader.Job, s *hfdownloader.Settings) { s.Retries = 20 },
 		"flatten":        func(_ *hfdownloader.Job, s *hfdownloader.Settings) { s.Flatten = true },
-		"token":          func(_ *hfdownloader.Job, s *hfdownloader.Settings) { s.Token = "hf_x" },
+		"token":          func(_ *hfdownloader.Job, s *hfdownloader.Settings) { s.Token = testutil.Secret("hf_") },
 		"relative cache": func(_ *hfdownloader.Job, s *hfdownloader.Settings) { s.CacheDir = "/cache/../cache" },
 	}
 	differs := map[string]func(*hfdownloader.Job, *hfdownloader.Settings){
@@ -668,16 +670,17 @@ func TestRecordID(t *testing.T) {
 
 // Credentials never reach the record, and the record round-trips the rest.
 func TestDownloadRecord_NoSecretsAndRoundTrip(t *testing.T) {
+	token, user, pass := testutil.Secret("hf_"), testutil.Secret(""), testutil.Secret("")
 	job := hfdownloader.Job{Repo: "o/r", IsDataset: true, Revision: "v1", Filters: []string{"a"}, Excludes: []string{"b"},
 		Shards: "1-2", ExactMatch: true, AppendFilterSubdir: true}
 	cfg := hfdownloader.Settings{CacheDir: "/c", Concurrency: 3, MaxActiveDownloads: 2, MultipartThreshold: "1MiB",
 		Verify: "sha256", Retries: 7, BackoffInitial: "1s", BackoffMax: "5s", StallTimeout: "30s", LinkMode: "copy",
 		Endpoint: "https://hf-mirror.example", NoManifest: true, Flatten: true, StaleTimeout: "9m",
-		Token: "hf_secret", Command: "hfdownloader download o/r",
-		Proxy: &hfdownloader.ProxyConfig{URL: "http://alice:pa55@proxy.example:3128", Username: "alice", Password: "pa55", NoEnvProxy: true}}
+		Token: token, Command: "hfdownloader download o/r",
+		Proxy: &hfdownloader.ProxyConfig{URL: "http://" + user + ":" + pass + "@proxy.example:3128", Username: user, Password: pass, NoEnvProxy: true}}
 	rec := newDownloadRecord(job, cfg)
 	raw, _ := json.Marshal(rec)
-	for _, secret := range []string{"hf_secret", "pa55", "alice"} {
+	for _, secret := range []string{token, pass, user} {
 		if bytes.Contains(raw, []byte(secret)) {
 			t.Errorf("record contains %q: %s", secret, raw)
 		}
@@ -702,11 +705,12 @@ func TestDownloadRecord_NoSecretsAndRoundTrip(t *testing.T) {
 func TestResumeProxy(t *testing.T) {
 	cmd := newResumeCmd(context.Background(), &RootOpts{})
 	o := &resumeOpts{}
-	fromConfig := &hfdownloader.ProxyConfig{URL: "http://config:1", Username: "u", Password: "p", NoProxy: "localhost"}
+	configPass, flagPass := testutil.Secret(""), testutil.Secret("")
+	fromConfig := &hfdownloader.ProxyConfig{URL: "http://config:1", Username: "u", Password: configPass, NoProxy: "localhost"}
 
 	// Recorded URL wins over the config file; config credentials are kept.
 	got := resumeProxy(cmd, o, fromConfig, &hfdownloader.ProxyConfig{URL: "http://recorded:2"})
-	if got.URL != "http://recorded:2" || got.Username != "u" || got.Password != "p" || got.NoProxy != "localhost" {
+	if got.URL != "http://recorded:2" || got.Username != "u" || got.Password != configPass || got.NoProxy != "localhost" {
 		t.Errorf("recorded+config = %+v", *got)
 	}
 	if fromConfig.URL != "http://config:1" {
@@ -717,9 +721,9 @@ func TestResumeProxy(t *testing.T) {
 		t.Errorf("config only = %+v", *got)
 	}
 	// Flags win over both.
-	cmd.ParseFlags([]string{"--proxy", "http://flag:3", "--proxy-pass", "flagpass"})
-	o.proxyURL, o.proxyPass = "http://flag:3", "flagpass"
-	if got := resumeProxy(cmd, o, fromConfig, &hfdownloader.ProxyConfig{URL: "http://recorded:2"}); got.URL != "http://flag:3" || got.Password != "flagpass" || got.Username != "u" {
+	cmd.ParseFlags([]string{"--proxy", "http://flag:3", "--proxy-pass", flagPass})
+	o.proxyURL, o.proxyPass = "http://flag:3", flagPass
+	if got := resumeProxy(cmd, o, fromConfig, &hfdownloader.ProxyConfig{URL: "http://recorded:2"}); got.URL != "http://flag:3" || got.Password != flagPass || got.Username != "u" {
 		t.Errorf("flags = %+v", *got)
 	}
 }
@@ -756,13 +760,14 @@ func TestRecordStore_IgnoresBadFiles(t *testing.T) {
 }
 
 func TestStripURLCredentials(t *testing.T) {
+	pass := testutil.Secret("")
 	for in, want := range map[string]string{
-		"http://proxy:3128":                 "http://proxy:3128",
-		"http://user:pass@proxy:3128":       "http://proxy:3128",
-		"socks5://user@proxy:1080":          "socks5://proxy:1080",
-		"":                                  "",
-		"http://us%zz:pa@proxy:1":           "http://proxy:1", // unparsable escape
-		"https://u:p@proxy.example/path?q=": "https://proxy.example/path?q=",
+		"http://proxy:3128":                   "http://proxy:3128",
+		"http://user:" + pass + "@proxy:3128": "http://proxy:3128",
+		"socks5://user@proxy:1080":            "socks5://proxy:1080",
+		"":                                    "",
+		"http://us%zz:" + pass + "@proxy:1":   "http://proxy:1", // unparsable escape
+		"https://u:" + pass + "@proxy.example/path?q=": "https://proxy.example/path?q=",
 	} {
 		if got := stripURLCredentials(in); got != want {
 			t.Errorf("stripURLCredentials(%q) = %q, want %q", in, got, want)
@@ -771,10 +776,11 @@ func TestStripURLCredentials(t *testing.T) {
 }
 
 func TestBuildCommandString_StripsProxyCredentials(t *testing.T) {
+	pass := testutil.Secret("")
 	cmd := newDownloadCmd(context.Background(), &RootOpts{})
 	got := buildCommandString(cmd, hfdownloader.Job{Repo: "o/r"}, hfdownloader.Settings{
-		Proxy: &hfdownloader.ProxyConfig{URL: "http://user:secret@proxy:3128"}})
-	if strings.Contains(got, "secret") || !strings.Contains(got, "--proxy http://proxy:3128") {
+		Proxy: &hfdownloader.ProxyConfig{URL: "http://user:" + pass + "@proxy:3128"}})
+	if strings.Contains(got, pass) || !strings.Contains(got, "--proxy http://proxy:3128") {
 		t.Errorf("command = %q", got)
 	}
 }

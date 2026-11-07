@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/reuc/HuggingFaceModelDownloader/internal/testutil"
 )
 
 func TestJob_Validation(t *testing.T) {
@@ -73,11 +75,12 @@ func TestSettings_Defaults(t *testing.T) {
 }
 
 func TestSettings_WithValues(t *testing.T) {
+	token := testutil.Secret("hf_")
 	s := Settings{
 		CacheDir:           "/tmp/cache",
 		Concurrency:        8,
 		MaxActiveDownloads: 3,
-		Token:              "hf_test_token",
+		Token:              token,
 		Endpoint:           "https://custom.endpoint",
 		Verify:             "sha256",
 		Retries:            5,
@@ -91,7 +94,7 @@ func TestSettings_WithValues(t *testing.T) {
 	if s.Concurrency != 8 {
 		t.Errorf("Concurrency = %d", s.Concurrency)
 	}
-	if s.Token != "hf_test_token" {
+	if s.Token != token {
 		t.Errorf("Token = %q", s.Token)
 	}
 	if s.Verify != "sha256" {

@@ -69,10 +69,11 @@ func TestLoadConfigMap_JSONConfig(t *testing.T) {
 
 	// Write JSON config
 	configPath := filepath.Join(configDir, "hfdownloader.json")
+	token := testutil.Secret("hf_")
 	configData := map[string]any{
 		"cache-dir":   "/custom/cache",
 		"connections": 16,
-		"token":       "hf_test_token",
+		"token":       token,
 	}
 	data, _ := json.Marshal(configData)
 	if err := os.WriteFile(configPath, data, 0o644); err != nil {
@@ -90,8 +91,8 @@ func TestLoadConfigMap_JSONConfig(t *testing.T) {
 	if v, ok := cfg["connections"].(float64); !ok || v != 16 {
 		t.Errorf("connections = %v, want 16", cfg["connections"])
 	}
-	if v, ok := cfg["token"].(string); !ok || v != "hf_test_token" {
-		t.Errorf("token = %v, want hf_test_token", cfg["token"])
+	if v, ok := cfg["token"].(string); !ok || v != token {
+		t.Errorf("token = %v, want %s", cfg["token"], token)
 	}
 }
 

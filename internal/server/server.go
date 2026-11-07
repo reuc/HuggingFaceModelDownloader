@@ -9,7 +9,6 @@ import (
 	"crypto/subtle"
 	"errors"
 	"fmt"
-	"io/fs"
 	"log"
 	"net/http"
 	"sync"
@@ -209,42 +208,10 @@ func (s *Server) handler() http.Handler {
 	// API routes
 	s.registerAPIRoutes(mux)
 
-	// Static files (embedded)
-	staticFS := assets.StaticFS()
-	fileServer := http.FileServer(http.FS(staticFS))
-
-	// Serve index.html for SPA routes
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		// Try to serve the file directly
-		path := r.URL.Path
-		if path == "/" {
-			path = "/index.html"
-		}
-
-		// Check if file exists
-		if f, err := staticFS.(fs.ReadFileFS).ReadFile(path[1:]); err == nil {
-			// Serve with correct content type
-			contentType := "text/html; charset=utf-8"
-			switch {
-			case len(path) > 4 && path[len(path)-4:] == ".css":
-				contentType = "text/css; charset=utf-8"
-			case len(path) > 3 && path[len(path)-3:] == ".js":
-				contentType = "application/javascript; charset=utf-8"
-			case len(path) > 5 && path[len(path)-5:] == ".json":
-				contentType = "application/json; charset=utf-8"
-			case len(path) > 4 && path[len(path)-4:] == ".svg":
-				contentType = "image/svg+xml"
-			}
-			w.Header().Set("Content-Type", contentType)
-			if _, err := w.Write(f); err != nil {
-				log.Printf("warning: could not write %s: %v", path, err)
-			}
-			return
-		}
-
-		// Fallback to index.html for SPA routing
-		fileServer.ServeHTTP(w, r)
-	})
+	// Static files (embedded): the dashboard's index.html, CSS and JS.
+	// http.FileServer serves index.html for "/", sets each file's content
+	// type from its extension, and 404s anything else.
+	mux.Handle("/", http.FileServer(http.FS(assets.StaticFS())))
 
 	return securityHeadersMiddleware(s.corsMiddleware(s.basicAuthMiddleware(s.loggingMiddleware(limitBodyMiddleware(mux)))))
 }

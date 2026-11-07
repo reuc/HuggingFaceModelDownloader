@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/reuc/HuggingFaceModelDownloader/internal/testutil"
 	"github.com/reuc/HuggingFaceModelDownloader/pkg/hfdownloader"
 )
 
@@ -77,9 +78,10 @@ func TestAPI_GetSettings(t *testing.T) {
 }
 
 func TestAPI_GetSettings_TokenMasked(t *testing.T) {
+	token := testutil.Secret("hf_")
 	cfg := Config{
 		CacheDir: "/tmp/test_cache",
-		Token:    "hf_abcdefghijklmnop",
+		Token:    token,
 	}
 	srv := New(cfg)
 
@@ -94,10 +96,10 @@ func TestAPI_GetSettings_TokenMasked(t *testing.T) {
 	}
 
 	// Token should be masked, not exposed
-	if resp.Token == "hf_abcdefghijklmnop" {
+	if resp.Token == token {
 		t.Error("Token should be masked, not exposed in full")
 	}
-	if resp.Token != "********mnop" {
+	if want := "********" + token[len(token)-4:]; resp.Token != want {
 		t.Errorf("Expected masked token ********mnop, got %s", resp.Token)
 	}
 }

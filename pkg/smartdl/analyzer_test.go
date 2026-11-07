@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"testing"
 	"time"
+
+	"github.com/reuc/HuggingFaceModelDownloader/internal/testutil"
 )
 
 func TestNewAnalyzer(t *testing.T) {
@@ -35,8 +37,9 @@ func TestNewAnalyzer(t *testing.T) {
 	})
 
 	t.Run("with token", func(t *testing.T) {
-		analyzer := NewAnalyzer(AnalyzerOptions{Token: "hf_test_token"})
-		if analyzer.token != "hf_test_token" {
+		token := testutil.Secret("hf_")
+		analyzer := NewAnalyzer(AnalyzerOptions{Token: token})
+		if analyzer.token != token {
 			t.Errorf("token = %q", analyzer.token)
 		}
 	})
@@ -326,11 +329,12 @@ func TestAnalyzer_RawURL(t *testing.T) {
 
 func TestAnalyzer_AddAuth(t *testing.T) {
 	t.Run("with token", func(t *testing.T) {
-		analyzer := NewAnalyzer(AnalyzerOptions{Token: "hf_test_token"})
+		token := testutil.Secret("hf_")
+		analyzer := NewAnalyzer(AnalyzerOptions{Token: token})
 		req, _ := http.NewRequest("GET", "http://example.com", nil)
 		analyzer.addAuth(req)
 
-		if auth := req.Header.Get("Authorization"); auth != "Bearer hf_test_token" {
+		if auth := req.Header.Get("Authorization"); auth != "Bearer "+token {
 			t.Errorf("Authorization = %q", auth)
 		}
 		if ua := req.Header.Get("User-Agent"); ua != "hfdownloader/3" {

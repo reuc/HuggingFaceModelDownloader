@@ -6,6 +6,7 @@ package smartdl
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -13,10 +14,25 @@ import (
 )
 
 // fakeSummaryHub serves model trees, raw files and model info; datasets is
-// the set of repos that also exist as datasets.
+// the set of repos that also exist as datasets. Raw files and model info are
+// canned bodies on their own exact routes, so what is written never depends
+// on the request.
 func fakeSummaryHub(t *testing.T, trees map[string][]map[string]any, raw map[string]string, modelInfo map[string]string, datasets map[string]bool) *httptest.Server {
 	t.Helper()
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mux := http.NewServeMux()
+	serveBody := func(body string) http.HandlerFunc {
+		return func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, body)
+		}
+	}
+	for path, body := range raw {
+		mux.HandleFunc(path, serveBody(body))
+	}
+	for repo, body := range modelInfo {
+		mux.HandleFunc("/api/models/"+repo, serveBody(body))
+	}
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		p := r.URL.Path
 		switch {
 		case strings.HasPrefix(p, "/api/models/") && strings.HasSuffix(p, "/tree/main"):
@@ -35,23 +51,12 @@ func fakeSummaryHub(t *testing.T, trees map[string][]map[string]any, raw map[str
 			}
 			_ = json.NewEncoder(w).Encode([]map[string]any{{"type": "file", "path": "data/train.parquet", "size": 100}})
 		case strings.HasSuffix(p, "/refs"):
-			_, _ = w.Write([]byte(`{"branches":[{"name":"main","targetCommit":"abc"}],"tags":[]}`))
-		case strings.HasPrefix(p, "/api/models/"):
-			body, ok := modelInfo[strings.TrimPrefix(p, "/api/models/")]
-			if !ok {
-				http.NotFound(w, r)
-				return
-			}
-			_, _ = w.Write([]byte(body))
+			_, _ = io.WriteString(w, `{"branches":[{"name":"main","targetCommit":"abc"}],"tags":[]}`)
 		default:
-			body, ok := raw[p]
-			if !ok {
-				http.NotFound(w, r)
-				return
-			}
-			_, _ = w.Write([]byte(body))
+			http.NotFound(w, r)
 		}
-	}))
+	})
+	return httptest.NewServer(mux)
 }
 
 func TestSummarize(t *testing.T) {

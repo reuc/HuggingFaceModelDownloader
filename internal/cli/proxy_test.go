@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/reuc/HuggingFaceModelDownloader/internal/testutil"
 	"github.com/reuc/HuggingFaceModelDownloader/pkg/hfdownloader"
 )
 
@@ -27,8 +28,9 @@ func TestProxyTest_JSONOutputIsOnlyJSON(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	pass := testutil.Secret("")
 	cmd := newProxyTestCmd(&RootOpts{JSONOut: true})
-	cmd.SetArgs([]string{"--proxy", "http://alice:s3cret@127.0.0.1:" + port, "--url", "http://example.invalid/", "--timeout", "5s"})
+	cmd.SetArgs([]string{"--proxy", "http://" + testutil.Secret("u") + ":" + pass + "@127.0.0.1:" + port, "--url", "http://example.invalid/", "--timeout", "5s"})
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
 
@@ -45,7 +47,7 @@ func TestProxyTest_JSONOutputIsOnlyJSON(t *testing.T) {
 	if res.Success || res.Error == "" {
 		t.Errorf("result = %+v, want a failure with an error message", res)
 	}
-	if strings.Contains(out, "s3cret") {
+	if strings.Contains(out, pass) {
 		t.Errorf("password leaked into the output:\n%s", out)
 	}
 }

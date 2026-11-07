@@ -11,6 +11,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/reuc/HuggingFaceModelDownloader/internal/testutil"
 )
 
 // TestWSHubConcurrentAccessRace stresses the hub's three map-touching paths
@@ -168,8 +170,9 @@ func TestSettingsUpdateNoRace(t *testing.T) {
 // constant-time comparison: right creds pass, anything else is 401.
 func TestBasicAuthMiddleware(t *testing.T) {
 	cfg := DefaultConfig()
+	pass := testutil.Secret("")
 	cfg.AuthUser = "admin"
-	cfg.AuthPass = "s3cret"
+	cfg.AuthPass = pass
 	s := New(cfg)
 
 	ok := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
@@ -182,9 +185,9 @@ func TestBasicAuthMiddleware(t *testing.T) {
 		want       int
 	}{
 		{"no creds", false, "", "", http.StatusUnauthorized},
-		{"wrong user", true, "root", "s3cret", http.StatusUnauthorized},
-		{"wrong pass", true, "admin", "nope", http.StatusUnauthorized},
-		{"correct", true, "admin", "s3cret", http.StatusOK},
+		{"wrong user", true, "root", pass, http.StatusUnauthorized},
+		{"wrong pass", true, "admin", testutil.Secret(""), http.StatusUnauthorized},
+		{"correct", true, "admin", pass, http.StatusOK},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
