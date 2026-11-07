@@ -72,6 +72,13 @@ func validSHA256Hex(s string) bool {
 	return true
 }
 
+// maskedHash reports whether s is the placeholder the Hub lists instead of a
+// file's hash: all '*' (64 of them for lfs.oid and xetHash). Gated repos
+// list it to clients that haven't been granted access.
+func maskedHash(s string) bool {
+	return s != "" && strings.Trim(s, "*") == ""
+}
+
 // validSnapshotName reports whether commit may name a snapshot directory
 // (snapshots/<commit>): a valid revision with no path separator. The value
 // comes from the Hub's revision API (or falls back to the revision name

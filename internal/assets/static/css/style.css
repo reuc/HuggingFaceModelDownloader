@@ -1342,6 +1342,11 @@ a {
   border-radius: var(--radius-md);
   font-size: 13px;
   color: var(--color-error);
+  /* Multi-file failures arrive one per line, often with long signed URLs. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 14em;
+  overflow-y: auto;
 }
 
 .job-progress {

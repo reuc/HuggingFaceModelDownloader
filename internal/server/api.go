@@ -390,6 +390,28 @@ func (s *Server) handleDismissJob(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleRetryJob puts a failed job back in the download queue ("Redownload"
+// on the Failed Jobs page) and returns the re-queued job. Finished files are
+// skipped and partial ones resume when it runs.
+func (s *Server) handleRetryJob(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "Missing job ID", "")
+		return
+	}
+
+	switch res, job := s.jobs.RetryJob(id); res {
+	case RetryJobOK:
+		writeJSON(w, http.StatusOK, job)
+	case RetryJobNotFailed:
+		writeError(w, http.StatusConflict, "Only failed jobs can be redownloaded", "")
+	case RetryJobDuplicate:
+		writeError(w, http.StatusConflict, "This download is already queued or running", "job "+job.ID)
+	default:
+		writeError(w, http.StatusNotFound, "Job not found", "")
+	}
+}
+
 // handleGetSettings returns current settings.
 func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 	// Read a consistent snapshot so we never observe a field mid-update.

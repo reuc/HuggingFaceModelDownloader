@@ -5,7 +5,10 @@ package hfdownloader
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -76,6 +79,7 @@ func TestPlanRepo_RejectsUnsafeCommitAndHash(t *testing.T) {
 		{"nested commit", "a/b", goodSHA, "unsafe commit"},
 		{"traversal sha", "0123456789abcdef0123456789abcdef01234567", "/../../../../escape", "unsafe sha256"},
 		{"short sha", "0123456789abcdef0123456789abcdef01234567", "abc", "unsafe sha256"},
+		{"partly masked sha", "0123456789abcdef0123456789abcdef01234567", strings.Repeat("*", 63) + "/", "unsafe sha256"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			srv := evilHub(tc.commit, tc.sha)
@@ -85,6 +89,71 @@ func TestPlanRepo_RejectsUnsafeCommitAndHash(t *testing.T) {
 				t.Fatalf("PlanRepo error = %v, want one containing %q", err, tc.want)
 			}
 		})
+	}
+}
+
+func TestMaskedHash(t *testing.T) {
+	for _, s := range []string{strings.Repeat("*", 64), "*"} {
+		if !maskedHash(s) {
+			t.Errorf("maskedHash(%q) = false, want true", s)
+		}
+	}
+	for _, s := range []string{"", strings.Repeat("ab", 32), strings.Repeat("*", 63) + "a", "**/.."} {
+		if maskedHash(s) {
+			t.Errorf("maskedHash(%q) = true, want false", s)
+		}
+	}
+}
+
+// Gated repos list lfs.oid (and xetHash) as 64 '*' to clients without
+// access. That is the Hub hiding the hash, not a tampered tree: the plan
+// treats it as unknown instead of failing with "unsafe sha256".
+func TestPlanRepo_MaskedHashIsUnknown(t *testing.T) {
+	srv := evilHub("0123456789abcdef0123456789abcdef01234567", strings.Repeat("*", 64))
+	defer srv.Close()
+	plan, err := PlanRepo(context.Background(), Job{Repo: "o/r"}, Settings{Endpoint: srv.URL, Retries: 1})
+	if err != nil {
+		t.Fatalf("PlanRepo: %v", err)
+	}
+	if len(plan.Items) != 1 || plan.Items[0].SHA256 != "" {
+		t.Fatalf("plan items = %+v, want one item with no SHA256", plan.Items)
+	}
+}
+
+// With access (the file request succeeds), a masked-hash file downloads and
+// is stored under the hash of its content.
+func TestDownload_MaskedHashStoresByContentHash(t *testing.T) {
+	srv := evilHub("0123456789abcdef0123456789abcdef01234567", strings.Repeat("*", 64))
+	defer srv.Close()
+	cacheDir := t.TempDir()
+	if err := Download(context.Background(), Job{Repo: "o/r"}, Settings{Endpoint: srv.URL, CacheDir: cacheDir, Retries: 1}, nil); err != nil {
+		t.Fatalf("Download: %v", err)
+	}
+	sum := sha256.Sum256([]byte("data"))
+	blob := filepath.Join(cacheDir, "hub", "models--o--r", "blobs", hex.EncodeToString(sum[:]))
+	if b, err := os.ReadFile(blob); err != nil || string(b) != "data" {
+		t.Fatalf("blob %s: %q, %v", blob, b, err)
+	}
+}
+
+// Without access the file request is refused: the job fails with the
+// access-denied hint, not an "unsafe sha256" error.
+func TestDownload_MaskedHashWithoutAccess(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/api/models/o/r/revision/"):
+			json.NewEncoder(w).Encode(map[string]string{"sha": "0123456789abcdef0123456789abcdef01234567"})
+		case strings.HasPrefix(r.URL.Path, "/api/models/o/r/tree/"):
+			json.NewEncoder(w).Encode([]hfNode{{Type: "file", Path: "model.bin", Size: 4,
+				LFS: &hfLfsInfo{Oid: strings.Repeat("*", 64), Size: 4}}})
+		default:
+			http.Error(w, "gated", http.StatusUnauthorized)
+		}
+	}))
+	defer srv.Close()
+	err := Download(context.Background(), Job{Repo: "o/r"}, Settings{Endpoint: srv.URL, CacheDir: t.TempDir(), Retries: 1}, nil)
+	if !errors.Is(err, ErrUnauthorized) || !strings.Contains(err.Error(), "HF_TOKEN") {
+		t.Fatalf("Download error = %v, want ErrUnauthorized with the HF_TOKEN hint", err)
 	}
 }
 

@@ -51,7 +51,7 @@
 
     // Load page data
     if (page === 'cache') loadCache();
-    if (page === 'jobs') loadJobs();
+    if (isJobsPage()) loadJobs();
     if (page === 'settings') loadSettings();
     if (page === 'mirror') loadMirrorTargets();
   }
@@ -130,7 +130,7 @@
         if (vEl) vEl.textContent = 'v' + msg.data.version;
       }
       updateJobsBadge();
-      if (state.currentPage === 'jobs') {
+      if (isJobsPage()) {
         renderJobs();
       }
     } else if (msg.type === 'job_update') {
@@ -139,25 +139,35 @@
       if (job && job.id) {
         state.jobs.set(job.id, job);
         updateJobsBadge();
-        if (state.currentPage === 'jobs') {
+        if (isJobsPage()) {
           renderJobs();
         }
       }
     }
   }
 
-  function updateJobsBadge() {
-    const activeCount = Array.from(state.jobs.values())
-      .filter(j => j.status === 'running' || j.status === 'queued' || j.status === 'paused').length;
+  // The Active Jobs and Failed Jobs pages both render from state.jobs.
+  function isJobsPage() {
+    return state.currentPage === 'jobs' || state.currentPage === 'failed';
+  }
 
-    const badge = $('#jobsBadge');
-    if (badge) {
-      if (activeCount > 0) {
-        badge.textContent = activeCount;
-        badge.style.display = 'block';
-      } else {
-        badge.style.display = 'none';
-      }
+  function updateJobsBadge() {
+    const jobs = Array.from(state.jobs.values());
+    const activeCount = jobs
+      .filter(j => j.status === 'running' || j.status === 'queued' || j.status === 'paused').length;
+    const failedCount = jobs.filter(j => j.status === 'failed').length;
+
+    setBadge($('#jobsBadge'), activeCount);
+    setBadge($('#failedBadge'), failedCount);
+  }
+
+  function setBadge(badge, count) {
+    if (!badge) return;
+    if (count > 0) {
+      badge.textContent = count;
+      badge.style.display = 'block';
+    } else {
+      badge.style.display = 'none';
     }
   }
 
@@ -1486,18 +1496,24 @@
   // elements keyed by job ID and only mutate the fields that actually
   // changed. Buttons are only re-rendered when the status category
   // transitions (e.g. running→paused), not on every progress tick.
+  // Active Jobs and Failed Jobs keep separate caches: a card lives in one
+  // list, so a job that fails (or is redownloaded) gets a fresh card in the
+  // other list and its old one is removed as stale.
   const jobCardCache = new Map();
+  const failedCardCache = new Map();
 
   // statusCategory groups statuses that share the same action buttons so
   // we only swap the buttons when the category changes. Running / queued
-  // both show Cancel; paused has Resume+Cancel; terminal states show Dismiss.
+  // both show Cancel; paused has Resume+Cancel; failed has Redownload+Dismiss;
+  // other terminal states show Dismiss.
   function statusCategory(status) {
     // running and queued have different buttons (Pause only while running),
     // so they must be separate categories or a queued job that starts never
     // gets its Pause button until the page reloads.
     if (status === 'running' || status === 'queued') return status;
     if (status === 'paused') return 'paused';
-    if (status === 'completed' || status === 'failed' || status === 'cancelled') return 'done';
+    if (status === 'failed') return 'failed';
+    if (status === 'completed' || status === 'cancelled') return 'done';
     return status || 'unknown';
   }
 
@@ -1519,7 +1535,13 @@
     if (status === 'queued') {
       return `<button class="btn btn-sm btn-danger" onclick="cancelJob(${id})">Cancel</button>`;
     }
-    // completed / failed / cancelled
+    if (status === 'failed') {
+      return `
+          <button class="btn btn-sm btn-primary" onclick="retryJob(${id})">Redownload</button>
+          <button class="btn btn-sm btn-secondary" onclick="dismissJob(${id})">Dismiss</button>
+      `;
+    }
+    // completed / cancelled
     return `<button class="btn btn-sm btn-secondary" onclick="dismissJob(${id})">Dismiss</button>`;
   }
 
@@ -1639,7 +1661,8 @@
 
   // Jobs page order: actively downloading first, then completed (most
   // recently finished first), then the queue in the order it will run, then
-  // everything else (paused, failed, cancelled; newest first).
+  // everything else (paused, cancelled; newest first). Failed jobs are on the
+  // Failed Jobs page, most recently failed first.
   const JOB_GROUP = { running: 0, completed: 1, queued: 2 };
   function compareJobs(a, b) {
     const ga = JOB_GROUP[a.status] ?? 3;
@@ -1650,21 +1673,14 @@
       if (qa !== qb) return qa - qb;
       return Date.parse(a.createdAt) - Date.parse(b.createdAt);
     }
-    if (a.status === 'completed') {
+    if (a.status === 'completed' || a.status === 'failed') {
       const d = Date.parse(b.endedAt || 0) - Date.parse(a.endedAt || 0);
       if (d) return d;
     }
     return Date.parse(b.createdAt) - Date.parse(a.createdAt);
   }
 
-  function renderJobs() {
-    const container = $('#jobsList');
-    if (!container) return;
-
-    const jobs = Array.from(state.jobs.values()).sort(compareJobs);
-
-    if (jobs.length === 0) {
-      container.innerHTML = `
+  const ACTIVE_EMPTY_HTML = `
         <div class="empty-state">
           <div class="empty-icon">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="64" height="64">
@@ -1675,7 +1691,33 @@
           <p>Start a download from the Download page to see progress here.</p>
         </div>
       `;
-      jobCardCache.clear();
+
+  const FAILED_EMPTY_HTML = `
+        <div class="empty-state">
+          <div class="empty-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="64" height="64">
+              <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+            </svg>
+          </div>
+          <h3>No Failed Downloads</h3>
+          <p>Downloads that stop with an error appear here, ready to redownload.</p>
+        </div>
+      `;
+
+  // renderJobs draws both job pages: failed jobs on Failed Jobs, every other
+  // job on Active Jobs.
+  function renderJobs() {
+    const jobs = Array.from(state.jobs.values()).sort(compareJobs);
+    renderJobList($('#jobsList'), jobCardCache, jobs.filter(j => j.status !== 'failed'), ACTIVE_EMPTY_HTML);
+    renderJobList($('#failedJobsList'), failedCardCache, jobs.filter(j => j.status === 'failed'), FAILED_EMPTY_HTML);
+  }
+
+  function renderJobList(container, cache, jobs, emptyHTML) {
+    if (!container) return;
+
+    if (jobs.length === 0) {
+      if (!container.querySelector('.empty-state')) container.innerHTML = emptyHTML;
+      cache.clear();
       return;
     }
 
@@ -1683,17 +1725,17 @@
     // the jobs view, clear the container and cache first.
     if (container.querySelector('.empty-state')) {
       container.innerHTML = '';
-      jobCardCache.clear();
+      cache.clear();
     }
 
     const seen = new Set();
     let prev = null;
     for (const job of jobs) {
       seen.add(job.id);
-      let el = jobCardCache.get(job.id);
+      let el = cache.get(job.id);
       if (!el) {
         el = createJobCard(job);
-        jobCardCache.set(job.id, el);
+        cache.set(job.id, el);
       }
       // Keep DOM order in sync with the sorted order; only move a card when
       // it's out of place so steady-state progress updates don't touch layout.
@@ -1703,11 +1745,11 @@
       prev = el;
     }
 
-    // Remove stale cards for jobs that are no longer tracked (dismiss).
-    for (const [id, el] of jobCardCache) {
+    // Remove stale cards: jobs dismissed, or moved to the other list.
+    for (const [id, el] of cache) {
       if (!seen.has(id)) {
         el.remove();
-        jobCardCache.delete(id);
+        cache.delete(id);
       }
     }
   }
@@ -1761,6 +1803,26 @@
       }
     } catch (e) {
       showToast(`Failed to resume: ${e.message}`, 'error');
+    }
+  };
+
+  // Redownload a failed job. The server re-queues the same job, so it moves
+  // from Failed Jobs back to Active Jobs; finished files are skipped and
+  // partial ones resume from the data already on disk.
+  window.retryJob = async function(jobId) {
+    try {
+      const job = await api('POST', `/jobs/${jobId}/retry`);
+      // A WebSocket update for the new run may have arrived first; don't
+      // overwrite it with this (older) queued snapshot.
+      const cur = state.jobs.get(jobId);
+      if (job && job.id && (!cur || cur.status === 'failed')) {
+        state.jobs.set(jobId, job);
+      }
+      renderJobs();
+      updateJobsBadge();
+      showToast('Moved to Active Jobs', 'success');
+    } catch (e) {
+      showToast(`Failed to redownload: ${e.message}`, 'error');
     }
   };
 

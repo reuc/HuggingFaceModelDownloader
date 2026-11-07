@@ -6,6 +6,7 @@ package hfdownloader
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -423,5 +424,101 @@ func TestDownloadMultipart_ProgressMonotonic(t *testing.T) {
 		evs := append([]int64(nil), events...)
 		mu.Unlock()
 		t.Errorf("observed %d progress regression(s) — events=%v", regressed.Load(), evs)
+	}
+}
+
+// headFlakyServer serves full for Range requests, but aborts the connection
+// on the first failHeads HEAD requests (a dropped connection or timeout at the
+// start of a file) and answers later HEADs with status. It counts HEADs.
+func headFlakyServer(t *testing.T, full []byte, failHeads int32, status int) (*httptest.Server, *int32) {
+	t.Helper()
+	var heads int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodHead {
+			if atomic.AddInt32(&heads, 1) <= failHeads {
+				panic(http.ErrAbortHandler)
+			}
+			if status != http.StatusOK {
+				w.WriteHeader(status)
+				return
+			}
+			w.Header().Set("Content-Length", strconv.Itoa(len(full)))
+			w.Header().Set("Accept-Ranges", "bytes")
+			return
+		}
+		var start, end int64
+		if _, err := fmt.Sscanf(r.Header.Get("Range"), "bytes=%d-%d", &start, &end); err != nil || end >= int64(len(full)) {
+			http.Error(w, "bad range", http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, len(full)))
+		w.WriteHeader(http.StatusPartialContent)
+		w.Write(full[start : end+1])
+	}))
+	return srv, &heads
+}
+
+// The HEAD that starts a multipart download is retried like the part
+// requests: a connection dropped during it no longer fails the file.
+func TestDownloadMultipart_RetriesHead(t *testing.T) {
+	full := bytes.Repeat([]byte("0123456789"), 2000)
+	srv, heads := headFlakyServer(t, full, 2, http.StatusOK)
+	defer srv.Close()
+	dst := filepath.Join(t.TempDir(), "out.bin")
+	it := PlanItem{RelativePath: "out.bin", URL: srv.URL + "/out.bin", Size: int64(len(full)), AcceptRanges: true}
+	cfg := Settings{Concurrency: 4, Retries: 3, BackoffInitial: "1ms", BackoffMax: "5ms"}
+
+	var retries int32
+	emit := func(e ProgressEvent) {
+		if e.Event == "retry" {
+			atomic.AddInt32(&retries, 1)
+		}
+	}
+	if err := downloadMultipart(context.Background(), srv.Client(), "", Job{Repo: "o/r"}, cfg, it, dst, emit); err != nil {
+		t.Fatalf("downloadMultipart: %v", err)
+	}
+	if got, _ := os.ReadFile(dst); !bytes.Equal(got, full) {
+		t.Errorf("content mismatch: got %d bytes, want %d", len(got), len(full))
+	}
+	if n := atomic.LoadInt32(heads); n != 3 {
+		t.Errorf("HEAD requests = %d, want 3 (two dropped, one served)", n)
+	}
+	if n := atomic.LoadInt32(&retries); n != 2 {
+		t.Errorf("retry events = %d, want 2", n)
+	}
+}
+
+// A HEAD that keeps failing gives up after the retry budget.
+func TestDownloadMultipart_HeadGivesUpAfterRetries(t *testing.T) {
+	full := bytes.Repeat([]byte("x"), 1000)
+	srv, heads := headFlakyServer(t, full, 100, http.StatusOK)
+	defer srv.Close()
+	dst := filepath.Join(t.TempDir(), "out.bin")
+	it := PlanItem{RelativePath: "out.bin", URL: srv.URL + "/out.bin", Size: int64(len(full)), AcceptRanges: true}
+	cfg := Settings{Concurrency: 2, Retries: 2, BackoffInitial: "1ms", BackoffMax: "5ms"}
+
+	if err := downloadMultipart(context.Background(), srv.Client(), "", Job{Repo: "o/r"}, cfg, it, dst, func(ProgressEvent) {}); err == nil {
+		t.Fatal("downloadMultipart succeeded although every HEAD failed")
+	}
+	if n := atomic.LoadInt32(heads); n != 3 {
+		t.Errorf("HEAD requests = %d, want 3 (1 + 2 retries)", n)
+	}
+}
+
+// Access errors on the HEAD are not retried: they won't change.
+func TestDownloadMultipart_HeadUnauthorizedNotRetried(t *testing.T) {
+	full := bytes.Repeat([]byte("x"), 1000)
+	srv, heads := headFlakyServer(t, full, 0, http.StatusUnauthorized)
+	defer srv.Close()
+	dst := filepath.Join(t.TempDir(), "out.bin")
+	it := PlanItem{RelativePath: "out.bin", URL: srv.URL + "/out.bin", Size: int64(len(full)), AcceptRanges: true}
+	cfg := Settings{Concurrency: 2, Retries: 3, BackoffInitial: "1ms", BackoffMax: "5ms"}
+
+	err := downloadMultipart(context.Background(), srv.Client(), "", Job{Repo: "o/r"}, cfg, it, dst, func(ProgressEvent) {})
+	if !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("error = %v, want ErrUnauthorized", err)
+	}
+	if n := atomic.LoadInt32(heads); n != 1 {
+		t.Errorf("HEAD requests = %d, want 1", n)
 	}
 }
