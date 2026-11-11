@@ -125,6 +125,7 @@ func New(cfg Config) *Server {
 		jobs:   NewJobManager(cfg, wsHub),
 		wsHub:  wsHub,
 	}
+	s.jobs.EnableSizeEstimates()
 	s.upgrader = websocket.Upgrader{
 		ReadBufferSize:  1024,
 		WriteBufferSize: 1024,

@@ -1713,8 +1713,51 @@
   // job on Active Jobs.
   function renderJobs() {
     const jobs = Array.from(state.jobs.values()).sort(compareJobs);
+    renderQueueSpace(jobs);
     renderJobList($('#jobsList'), jobCardCache, jobs.filter(j => j.status !== 'failed'), ACTIVE_EMPTY_HTML);
     renderJobList($('#failedJobsList'), failedCardCache, jobs.filter(j => j.status === 'failed'), FAILED_EMPTY_HTML);
+  }
+
+  // queueSpaceTotals sums the disk space still needed by the jobs that are not
+  // finished: running, queued and paused ones. A job needs its total size
+  // minus what it has already written; before it starts, its size is the
+  // estimate the server scanned from the Hub (a queued job that resumes data
+  // already on disk may need less than that). Jobs whose size is not known
+  // yet are counted separately instead of as needing nothing.
+  function queueSpaceTotals(jobs) {
+    const t = { bytes: 0, jobs: 0, unsized: 0 };
+    for (const job of jobs) {
+      if (job.status !== 'running' && job.status !== 'queued' && job.status !== 'paused') continue;
+      const p = job.progress || {};
+      const size = p.totalBytes || job.estimatedBytes || 0;
+      t.jobs++;
+      if (size > 0) {
+        t.bytes += Math.max(0, size - (p.downloadedBytes || 0));
+      } else {
+        t.unsized++;
+      }
+    }
+    return t;
+  }
+
+  function renderQueueSpace(jobs) {
+    const el = $('#queueSpace');
+    if (!el) return;
+    const t = queueSpaceTotals(jobs);
+    if (t.jobs === 0) {
+      el.hidden = true;
+      el.textContent = '';
+      return;
+    }
+    // Unsized jobs get their own count: their space is not in the total.
+    const html =
+      `<span>Space needed: <strong>${escapeHtml(formatBytes(t.bytes))}</strong></span>` +
+      `<span>Jobs not completed: <strong>${t.jobs}</strong></span>` +
+      (t.unsized > 0
+        ? `<span title="Size not known yet; not included in the space needed">Not sized yet: <strong>${t.unsized}</strong></span>`
+        : '');
+    if (el.innerHTML !== html) el.innerHTML = html;
+    el.hidden = false;
   }
 
   function renderJobList(container, cache, jobs, emptyHTML) {

@@ -1250,6 +1250,27 @@ a {
    Jobs Page
    ============================================ */
 
+.queue-space {
+  margin: 0 40px 16px;
+  padding: 10px 16px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 24px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 8px);
+}
+
+.queue-space[hidden] {
+  display: none;
+}
+
+.queue-space strong {
+  color: var(--color-text);
+}
+
 .jobs-list {
   flex: 1;
   padding: 0 40px 40px;

@@ -176,6 +176,11 @@ current one finishes. Queued jobs run in ascending `queueSeq` order; use
 [`POST /api/jobs/{id}/move-to-top`](#post-apijobsidmove-to-top) to make one
 the next download.
 
+A job's `estimatedBytes` is the total size of its files, scanned from the Hub
+shortly after it is queued (absent until the scan finishes or if it fails).
+`progress.totalBytes` is `0` until the job runs, so the web UI uses
+`estimatedBytes` to total the disk space the unfinished jobs still need.
+
 **Response** `200 OK` (Existing job)
 
 A request is a duplicate when a `queued` or `running` job has the same `repo`,

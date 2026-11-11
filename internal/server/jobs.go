@@ -51,6 +51,12 @@ type Job struct {
 	// time it is (re)queued; moving it to the top of the queue gives it one
 	// below every other queued job, which can be zero or negative.
 	QueueSeq int64 `json:"queueSeq,omitempty"`
+	// EstimatedBytes is the total size of the files this job will download,
+	// scanned from the Hub shortly after the job is queued, so the web UI can
+	// total the disk space the queue needs before any job has started. Zero
+	// until the scan finishes (or if it fails). Once a job runs, Progress
+	// carries the real figure.
+	EstimatedBytes int64 `json:"estimatedBytes,omitempty"`
 
 	cancel     context.CancelFunc
 	generation int // Tracks which runJob instance is current
@@ -105,6 +111,11 @@ type JobManager struct {
 	// runFn performs a job's download. It defaults to runJob and exists so
 	// tests can substitute a fake runner without touching the network.
 	runFn func(*Job)
+
+	// sizeFn reports the total download size of a job. nil (the default)
+	// disables size estimates; the server enables them with
+	// EnableSizeEstimates. It exists so tests don't reach the network.
+	sizeFn func(ctx context.Context, job Job, cfg Config) (int64, error)
 
 	// jobsFile is where the job list is saved on every status change so
 	// queued/running downloads survive a restart (see jobstore.go). Empty
@@ -169,6 +180,86 @@ func (m *JobManager) UpdateConfig(cfg Config) {
 	m.mu.Lock()
 	m.config = cfg
 	m.mu.Unlock()
+}
+
+// EnableSizeEstimates makes the manager scan the Hub for the size of every
+// job that is waiting to run (see Job.EstimatedBytes), including the ones
+// restored from the job list.
+func (m *JobManager) EnableSizeEstimates() {
+	m.mu.Lock()
+	m.sizeFn = scanJobSize
+	var ids []string
+	for id, j := range m.jobs {
+		if j.Status == JobStatusQueued || j.Status == JobStatusPaused {
+			ids = append(ids, id)
+		}
+	}
+	m.mu.Unlock()
+	for _, id := range ids {
+		m.estimateAsync(id)
+	}
+}
+
+// scanJobSize sums the sizes in the download plan of job: what the downloader
+// reports as plan_item events when the job runs.
+func scanJobSize(ctx context.Context, job Job, cfg Config) (int64, error) {
+	var total int64
+	err := hfdownloader.ScanPlan(ctx, hfdownloader.Job{
+		Repo:       job.Repo,
+		Revision:   job.Revision,
+		IsDataset:  job.IsDataset,
+		Filters:    job.Filters,
+		Excludes:   job.Excludes,
+		ExactMatch: job.ExactMatch,
+	}, hfdownloader.Settings{
+		Token:    cfg.Token,
+		Endpoint: cfg.Endpoint,
+		Proxy:    cfg.Proxy,
+	}, func(evt hfdownloader.ProgressEvent) {
+		if evt.Event == "plan_item" {
+			total += evt.Total
+		}
+	})
+	return total, err
+}
+
+// estimateAsync looks up the download size of job id in the background and
+// publishes it as Job.EstimatedBytes. Failures are ignored: the UI then
+// counts the job as unsized rather than as needing no space.
+func (m *JobManager) estimateAsync(id string) {
+	m.mu.RLock()
+	fn := m.sizeFn
+	j, ok := m.jobs[id]
+	var snap Job
+	if ok {
+		snap = *m.cloneJobLocked(j)
+	}
+	cfg := m.config
+	m.mu.RUnlock()
+	if fn == nil || !ok || snap.EstimatedBytes > 0 {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), hubRequestTimeout)
+		defer cancel()
+		size, err := fn(ctx, snap, cfg)
+		if err != nil || size <= 0 {
+			return
+		}
+		m.mu.Lock()
+		cur, ok := m.jobs[id]
+		// Filters never change after creation, so the size stays valid for
+		// any status; just skip a job deleted in the meantime.
+		if !ok {
+			m.mu.Unlock()
+			return
+		}
+		cur.EstimatedBytes = size
+		update := m.cloneJobLocked(cur)
+		m.mu.Unlock()
+		m.saveJobs()
+		m.notifyListeners(update)
+	}()
 }
 
 // Stop halts background machinery owned by the manager (currently the
@@ -356,6 +447,7 @@ func (m *JobManager) CreateJob(req DownloadRequest) (*Job, bool, error) {
 	snapshot := m.cloneJobLocked(job)
 	m.mu.Unlock()
 	m.saveJobs()
+	m.estimateAsync(job.ID)
 
 	return snapshot, false, nil
 }
@@ -469,6 +561,7 @@ func (m *JobManager) ResumeJob(id string) bool {
 
 	// Notify listeners of status change
 	m.notifyListeners(snapshot)
+	m.estimateAsync(id)
 
 	return true
 }
@@ -590,6 +683,7 @@ func (m *JobManager) RetryJob(id string) (RetryJobResult, *Job) {
 	m.saveJobs()
 
 	m.notifyListeners(snapshot)
+	m.estimateAsync(id)
 	return RetryJobOK, snapshot
 }
 
