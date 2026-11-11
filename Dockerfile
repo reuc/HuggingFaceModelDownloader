@@ -88,7 +88,7 @@ RUN ["go", "build", "-ldflags=-s -w", "-o", "/home/nonroot/hfdownloader", "./cmd
 # Runtime filesystem: Wolfi packages installed into /rootfs. Runs on the
 # target platform (emulated for cross-arch builds; only apk and busybox run).
 # =============================================================================
-FROM cgr.dev/chainguard/wolfi-base:latest@sha256:8509ee4351a2e501b7f98201f2e2642396e82020c61a589cacdcfe74b9de46c1 AS rootfs
+FROM cgr.dev/chainguard/wolfi-base:latest@sha256:24f549a7fcace88e69b9557941168c74645688ecc4acf7fb6d734a6b74e9019d AS rootfs
 
 # Change it to force packages to be fetched again (e.g. for a new Wolfi fix).
 ARG APK_CACHE_BUST=0
