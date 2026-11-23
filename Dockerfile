@@ -65,7 +65,7 @@
 # Published, signed and SLSA-attested by github.com/reuc/wolfi-polyglot; verify
 # with: gh attestation verify oci://<image>@<digest> -R reuc/wolfi-polyglot
 # =============================================================================
-FROM --platform=$BUILDPLATFORM docker.io/reuc/wolfi-polyglot:20261107-distroless@sha256:917ed6d9eca1ffc9b928f37ef9fc1a640b905456325cdcfb5646fd31faad6c98 AS build
+FROM --platform=$BUILDPLATFORM docker.io/reuc/wolfi-polyglot:20261120-distroless@sha256:ef1e8c693a78c5bf941ba22ac4ccaaafc4e85754617fdfbf10aa39a61e2dadd4 AS build
 
 ARG TARGETOS
 ARG TARGETARCH
